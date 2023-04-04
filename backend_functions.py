@@ -15,6 +15,7 @@ from parameters import (
 )
 
 load_dotenv()
+load_dotenv(".env.local")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
@@ -45,6 +46,16 @@ def chat(
     """
     system_prompt = system_prompts[actor]
     if len(history) > 0:
+        # shorten the history to HISTORY_MAX_LENGTH messages,
+        history = history[-HISTORY_MAX_LENGTH:]
+        # also shorten the text of each historic message to HISTORY_MAX_TEXT characters
+        for message in history:
+            message["content"] = message["content"][-HISTORY_MAX_TEXT:]
+            # replace the key "author" with "role", and remove "loading" key
+            message["role"] = message.pop("author")
+            message.pop("loading")
+
+        # add the system prompt to the history
         prompt_messages = history
         prompt_messages.append({"role": "user", "content": prompt})
     else:
@@ -53,13 +64,6 @@ def chat(
             {"role": "user", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-
-    # shorten the history to HISTORY_MAX_LENGTH messages,
-    prompt_messages = prompt_messages[-HISTORY_MAX_LENGTH:]
-    # also shorten the text of each message up to X characters, except for the last message
-    for index, response_message in enumerate(prompt_messages):
-        if index < len(prompt_messages) - 1:
-            response_message["content"] = response_message["content"][:HISTORY_MAX_TEXT]
 
     time_start = datetime.datetime.now()
     # https://platform.openai.com/docs/api-reference/chat/create
@@ -73,11 +77,13 @@ def chat(
         presence_penalty=0,
         stream=stream,
     )
+
     if not stream:
-        response_message["role"] = response.choices[0].message.role
-        response_message["content"] = response.choices[0].message.content
+        response["role"] = response.choices[0].message.role
+        response["content"] = response.choices[0].message.content
 
     if stream:
+        return response
         # create variables to collect the stream of chunks
         collected_chunks = []
         collected_chunk_messages = []
@@ -97,17 +103,17 @@ def chat(
         # convert the stream of chunks to a single string
         response_message["content"] = "".join(response_message["content"])
 
-    time_lapsed = datetime.datetime.now() - time_start
-    print(f"time: {time_lapsed.seconds}s")
+    # time_lapsed = datetime.datetime.now() - time_start
+    # print(f"time: {time_lapsed.seconds}s")
 
-    if session_id is None:
-        session_id = time_start.strftime("%Y-%m-%d_%H-%M-%S")
+    # if session_id is None:
+    #     session_id = time_start.strftime("%Y-%m-%d_%H-%M-%S")
 
-    record_chat_history(
-        session_id, prompt_messages, response_message, time_start, time_lapsed
-    )
+    # record_chat_history(
+    #     session_id, prompt_messages, response_message, time_start, time_lapsed
+    # )
 
-    return response_message
+    return response
 
 
 def record_chat_history(
