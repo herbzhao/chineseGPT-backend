@@ -10,6 +10,8 @@ from pydantic import BaseModel
 load_dotenv()
 if os.path.exists(".env.local"):
     load_dotenv(".env.local")
+if os.path.exists(".env.production") and os.getenv("ENVIRONMENT") == "production":
+    load_dotenv(".env.production")
 
 app = FastAPI()
 
