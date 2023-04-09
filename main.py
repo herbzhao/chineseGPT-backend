@@ -119,18 +119,19 @@ async def chat_stream(websocket: WebSocket):
         voide_input = await websocket.receive_bytes()
         input_chunks.append(voide_input)
         if len(input_chunks) == 1:
-            webm_header = input_chunks[0][:500]
+            webm_header = input_chunks[0][:50]
         # input_bytes = b"".join(input_chunks)
         input_bytes = b"".join([webm_header, input_chunks[-1]])
 
-        print("\n\n\n")
-        print(len(input_chunks))
-        print(len(input_bytes))
-        print("\n\n\n")
+        # transcript = voice_to_text(input_bytes)
+        # transcripts.append(transcript)
+        # print("\n\n\n")
+        # print(len(input_chunks))
+        # print(len(input_bytes))
+        # print(transcript)
+        # print("\n\n\n")
+        # await websocket.send_json({"transcript": transcripts[-1]})
 
-        transcript = voice_to_text(input_bytes)
-        transcripts.append(transcript)
-        await websocket.send_json({"transcript": transcripts[-1]})
         # if the last two transcripts are the same, then user finished speaking
         # if transcripts[-1] == transcripts[-2]:
         #     await websocket.send_json({"transcript": transcripts})

@@ -17,6 +17,7 @@ eventlet = "*"
 fastapi = "*"
 uvicorn = "*"
 websockets = "*"
+pydub = "*"
 
 [dev-packages]
 black = "*"
