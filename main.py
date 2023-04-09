@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 import time
-from backend_functions import chat, voice_to_text, clean_temp_audio_files
+from backend_functions import chat
+from audio_processing import transcribing_chunks, transcribing_chunks_async
 import json
 from pydantic import BaseModel
+import uvicorn
 
 load_dotenv()
 if os.path.exists(".env.local"):
@@ -113,27 +115,33 @@ async def chat_stream(websocket: WebSocket):
 @app.websocket("/chat/stream/audioTranscript")
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
-    transcripts = []
-    input_chunks = []
+    voice_chunks = []
+    transcribed_segment_length = 0
+    print("websocket connected")
     while True:
-        voide_input = await websocket.receive_bytes()
-        input_chunks.append(voide_input)
-        if len(input_chunks) == 1:
-            webm_header = input_chunks[0][:50]
-        # input_bytes = b"".join(input_chunks)
-        input_bytes = b"".join([webm_header, input_chunks[-1]])
+        voice_chunk = await websocket.receive_bytes()
+        voice_chunks.append(voice_chunk)
+        (
+            transcripts,
+            transcribed_segment_length,
+            stop_transcribing,
+        ) = await transcribing_chunks_async(voice_chunks, transcribed_segment_length)
+        if stop_transcribing:
+            # only 1 segment is used and only 1 transcript is returned
+            transcript = transcripts[0]
+            await websocket.send_json({"transcript": transcripts[0], "command": "DONE"})
+            print(transcripts[0])
+            print("disconnecting websocket...")
+            # await websocket.close(code=1000, reason=None)
+            voice_chunks = []
+            transcribed_segment_length = 0
+            stop_transcribing = False
+            break
+        else:
+            for transcript in transcripts:
+                print(transcript)
+                await websocket.send_json({"transcript": transcript})
 
-        # transcript = voice_to_text(input_bytes)
-        # transcripts.append(transcript)
-        # print("\n\n\n")
-        # print(len(input_chunks))
-        # print(len(input_bytes))
-        # print(transcript)
-        # print("\n\n\n")
-        # await websocket.send_json({"transcript": transcripts[-1]})
 
-        # if the last two transcripts are the same, then user finished speaking
-        # if transcripts[-1] == transcripts[-2]:
-        #     await websocket.send_json({"transcript": transcripts})
-        #     await websocket.send_json({"transcript": "DONE"})
-        #     clean_temp_audio_files()
+if __name__ == "__main__":
+    uvicorn.run(app, host="localhost", port=8080, reload=False)

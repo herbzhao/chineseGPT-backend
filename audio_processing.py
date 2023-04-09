@@ -2,15 +2,20 @@
 from pathlib import Path
 import io
 from typing import List, Optional
-
+import uuid
 from pydub import (
     AudioSegment,
     silence,
 )
 from fastlid import fastlid
 
-from parameters import LANGUAGE_DETECT_CONFIDENCE, EXPECTED_LANGUAGE
-from backend_functions import voice_to_text
+from parameters import (
+    LANGUAGE_DETECT_CONFIDENCE,
+    EXPECTED_LANGUAGE,
+    SENTENCE_BREAK_DURATION,
+    SILENCE_THRESHOLD,
+)
+from backend_functions import voice_to_text, voice_to_text_async
 
 
 def load_chunks_from_folder(folder_name: str) -> List[bytes]:
@@ -50,7 +55,10 @@ def join_webm_chunks_to_segment(chunks: List[bytes]) -> bytes:
 
 
 def split_segment_by_silence(
-    segment: AudioSegment, silence_durations: int = 200, silence_thresh: int = -50
+    segment: AudioSegment,
+    silence_durations: int = 200,
+    silence_thresh: int = SILENCE_THRESHOLD,
+    maximum_length: int = 2000,
 ) -> list[AudioSegment]:
     """Remove silence from the beginning and end of each segment in a list of segments.
 
@@ -58,6 +66,7 @@ def split_segment_by_silence(
         segments (AudioSegment): AudioSegment object.
         silence_durations (int, optional): Duration of silence required to trigger removal. Defaults to 200.
         silence_thresh (int, optional): Threshold in dBFS below which samples are considered silence. Defaults to -50.
+        maximum_length (int, optional): Maximum length of a segment. Defaults to 2000. will break up even if no silence is detected.
 
     Returns:
         list[AudioSegment]: List of AudioSegment objects with silence removed from the beginning and end.
@@ -66,10 +75,12 @@ def split_segment_by_silence(
     non_silent_ranges = silence.detect_nonsilent(
         segment, min_silence_len=silence_durations, silence_thresh=silence_thresh
     )
+
     # discard the range that ends together with the end of the segment
     non_silent_ranges = [r for r in non_silent_ranges if r[1] != len(segment)]
+
     split_segments = [segment[r[0] : r[1]] for r in non_silent_ranges]
-    # print(f"Split {len(segment)} into {len(split_segments)} segments")
+    # print(f"Split {len(segment)} into {len(split_segments)} se gments")
 
     return split_segments
 
@@ -129,7 +140,8 @@ def save_segments_to_io(segments: List[AudioSegment]) -> List[io.BytesIO]:
     segments_io = []
     for i, segment in enumerate(segments):
         segment_io = io.BytesIO()
-        segment_io.name = f"segment{i}.webm"
+        # generate a random uuid
+        segment_io.name = f"{str(uuid.uuid4())}.webm"
         segment.export(segment_io, format="webm")
         segments_io.append(segment_io)
 
@@ -157,7 +169,7 @@ def remove_overlap(segments: List[AudioSegment]) -> List[AudioSegment]:
 def remove_silence(
     segment: AudioSegment,
     silcence_durations: int = 200,
-    silence_thresh: float = -50,
+    silence_thresh: int = SILENCE_THRESHOLD,
 ) -> list[AudioSegment]:
     """Remove silence from the beginning and end of each segment in a list of segments.
 
@@ -177,10 +189,10 @@ def remove_silence(
     return segment
 
 
-def detect_break(
-    segments: list[AudioSegment],
-    silcence_durations: int = 200,
-    silence_thresh: float = -50,
+def detect_audio_stop(
+    segment: AudioSegment,
+    silcence_durations: int = SENTENCE_BREAK_DURATION,
+    silence_thresh: int = SILENCE_THRESHOLD,
 ) -> bool:
     """Detects breaks in audio recording
 
@@ -192,40 +204,68 @@ def detect_break(
     Returns:
         bool: the user stopped speaking
     """
-    # if the trailing silence is longer than the silence duration, then the user stopped speaking
-    trailing_silence = silence.detect_leading_silence(segments[-1], silence_thresh=-50)
-    if trailing_silence > silcence_durations:
-        return True
+    # if there is any silence is longer than the silence duration, then the user stopped speaking
+    silcence_segments = silence.detect_silence(
+        segment, silence_thresh=-50, min_silence_len=silcence_durations
+    )
+    # make sure the silence is not at the beginning of the segment
+    silcence_segments = [s for s in silcence_segments if s[0] != 0]
+    return True if len(silcence_segments) > 0 else False
 
 
-if __name__ == "__main__":
-    chunks = load_chunks_from_folder("resources/chunks")
+def transcribing_chunks(chunks, transcribed_segment_length=0):
     segment = join_webm_chunks_to_segment(chunks)
-
-    transcribed_segment_length = 0
-    language = None
-    for i, _ in enumerate(chunks):
-        segment = join_webm_chunks_to_segment(chunks[: i + 1])
+    # check if the segment contains end of speech
+    if detect_audio_stop(segment):
+        segment_io = save_segments_to_io([segment])[0]
+        print("Transcribing the last segment")
+        transcripts = [voice_to_text(segment_io)]
+        stop_transcribing = True
+    else:
         split_segments = split_segment_by_silence(segment)
         # don't transcribe the segments that have already been transcribed
         split_segments = split_segments[transcribed_segment_length:]
         segments_io = save_segments_to_io(split_segments)
+        transcripts = []
         for segment_io in segments_io:
-            transcript = voice_to_text(segment_io, language=language)
-            # use the language of the first segment
-            if language is None:
-                fastlid.set_languages = EXPECTED_LANGUAGE
-                predicted_language = fastlid(transcript)
-                # if the confidence is low, then don't set the language yet
-                if predicted_language[1] > LANGUAGE_DETECT_CONFIDENCE:
-                    language = predicted_language[0]
-                    print("set language to", language)
-            print(transcript)
-
+            transcripts.append(voice_to_text(segment_io))
         transcribed_segment_length += len(split_segments)
+        stop_transcribing = False
+    return transcripts, transcribed_segment_length, stop_transcribing
 
-        if i == len(chunks) - 1:
-            # save the audio segments to different files
-            segments_io = save_segments_to_io([segment])
-            transcript = voice_to_text(segments_io[0], language=language)
-            print(transcript)
+
+async def transcribing_chunks_async(chunks, transcribed_segment_length=0):
+    segment = join_webm_chunks_to_segment(chunks)
+    # check if the segment contains end of speech
+    if detect_audio_stop(segment):
+        segment_io = save_segments_to_io([segment])[0]
+        # save the segment to a file
+        save_segments([segment], "resources/chunks/segments")
+        print("Transcribing the last segment")
+        transcripts = [await voice_to_text_async(segment_io)]
+        stop_transcribing = True
+    else:
+        split_segments = split_segment_by_silence(segment)
+        # don't transcribe the segments that have already been transcribed
+        split_segments = split_segments[transcribed_segment_length:]
+        segments_io = save_segments_to_io(split_segments)
+        transcripts = []
+        for segment_io in segments_io:
+            transcripts.append(await voice_to_text_async(segment_io))
+        transcribed_segment_length += len(split_segments)
+        stop_transcribing = False
+    return transcripts, transcribed_segment_length, stop_transcribing
+
+
+if __name__ == "__main__":
+    chunks = load_chunks_from_folder("resources/chunks")
+    transcribed_segment_length = 0
+    for i, _ in enumerate(chunks):
+        (
+            transcripts,
+            transcribed_segment_length,
+            stop_transcribing,
+        ) = transcribing_chunks(chunks[: i + 1], transcribed_segment_length)
+        print(transcripts)
+        if stop_transcribing:
+            break

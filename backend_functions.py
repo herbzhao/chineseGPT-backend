@@ -6,12 +6,6 @@ import datetime
 from pathlib import Path
 from typing import List, Optional
 import tiktoken
-import tempfile
-
-from pydub import (
-    AudioSegment,
-    silence,
-)
 
 from parameters import (
     accuracy_temperatures_map,
@@ -194,14 +188,28 @@ def voice_to_text(
     return transcript
 
 
-def detect_language(text: str) -> str:
-    """Detects the language of a text string. Returns a string of the language.
+async def voice_to_text_async(
+    audio_file: str, accuracy: str = "medium", language: Optional[str] = None
+) -> str:
+    """Converts an audio file to text. Returns a string of the text.
 
-    text : str
-        The text to detect the language of.
+    audio_file : str
+        The path to the audio file.
+    accuracy : str, optional
+        The accuracy of the transcription. Must be one of "high", "medium",
+        or "low". Defaults to "medium".
+    language : Optional[str], optional
+        The language of the audio file. Defaults to None.
     """
-    language = openai.Language.detect(text=text)["language"]
-    return language
+    # if audiofile has no name attribute, assign an arbitrary name
+    transcript = openai.Audio.transcribe(
+        model="whisper-1",
+        file=audio_file,
+        temperature=accuracy_temperatures_map[accuracy],
+        language=language,
+    )["text"]
+
+    return transcript
 
 
 if __name__ == "__main__":
