@@ -1,8 +1,10 @@
 .env.local
 .env
 
-# exclude everything
-temp/*
+__pycache__/
 
-# exception to the rule
+# keep an empty temp folder
+temp/*
 !temp/.gitkeep 
+
+resources/*

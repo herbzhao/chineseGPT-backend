@@ -12,3 +12,6 @@ using fly.io to deploy:
 
 - procfile needs to specify the port to be 8080 and host to be 0.0.0.0
 - set the environment variable via `flyctl secrets set DATABASE_URL=postgres://example.com/mydb`
+
+-automatic deployment via github actions
+<https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/>

@@ -6,6 +6,8 @@ import datetime
 from pathlib import Path
 from typing import List, Optional
 import tiktoken
+import tempfile
+
 from parameters import (
     accuracy_temperatures_map,
     system_prompts,
@@ -81,39 +83,57 @@ def chat(
     if not stream:
         response["role"] = response.choices[0].message.role
         response["content"] = response.choices[0].message.content
+        return response
 
     if stream:
         return response
-        # create variables to collect the stream of chunks
-        collected_chunks = []
-        collected_chunk_messages = []
-        response_message = {"role": "assistant", "content": []}
-        for chunk in response:
-            collected_chunks.append(chunk)  # save the event response
-            chunk_message = chunk["choices"][0]["delta"]  # extract the message
-            collected_chunk_messages.append(chunk_message)  # save the message
-            if "content" in chunk_message:
-                response_message["content"].append(chunk_message.content)
-                print(chunk_message.content, end="", flush=True)
-            elif "role" in chunk_message:
-                response_message["role"] = chunk_message.role
-                print(f"\r{chunk_message.role}: ", end="", flush=True)
-        print()
 
-        # convert the stream of chunks to a single string
-        response_message["content"] = "".join(response_message["content"])
 
-    # time_lapsed = datetime.datetime.now() - time_start
-    # print(f"time: {time_lapsed.seconds}s")
+def voice_to_text(audio_file):
+    """This function is used to convert a voice recording to text.
 
-    # if session_id is None:
-    #     session_id = time_start.strftime("%Y-%m-%d_%H-%M-%S")
+    This function is used to convert a voice recording to text.
+    It uses the OpenAI's whisper Speech-to-Text API.
 
-    # record_chat_history(
-    #     session_id, prompt_messages, response_message, time_start, time_lapsed
-    # )
+    Returns:
+        str: The text that was converted from the voice recording
+    """
+    # if the file is a byte string, save it to a temporary file
+    if isinstance(audio_file, bytes):
+        with tempfile.NamedTemporaryFile(
+            dir="./temp", suffix=".webm", delete=False
+        ) as temp_file:
+            temp_file.write(audio_file)
+            temp_file.seek(0)
+            # Pass the file object to your backend function
+            temp_path = Path(temp_file.name)
+            # relative path to the file
+            temp_path = temp_path.relative_to(Path.cwd())
+            print("\n\n\n")
+            print(temp_path)
+            print("\n\n\n")
+            with open(temp_path, "rb") as audio_file:
+                transcript = openai.Audio.transcribe("whisper-1", audio_file)["text"]
 
-    return response
+    else:
+        transcript = openai.Audio.transcribe("whisper-1", audio_file)["text"]
+
+    print("\n\n\n")
+    print(transcript)
+    print("\n\n\n")
+
+    return transcript
+
+
+def clean_temp_audio_files():
+    """This function is used to delete all temporary audio files.
+
+    This function is used to delete all temporary audio files.
+    """
+    temp_dir = Path("temp")
+    for file in temp_dir.iterdir():
+        if file.is_file():
+            file.unlink()
 
 
 def record_chat_history(
@@ -193,13 +213,16 @@ def calculate_token_number(messages, model=MODEL):
 
 
 if __name__ == "__main__":
-    prompt = "name 3 animals"
-    response = chat(
-        prompt=prompt,
-        history=[],
-        actor="personal assistant",
-        max_tokens=200,
-        accuracy="medium",
-        stream=True,
-        session_id="test",
-    )
+    # prompt = "name 3 animals"
+    # response = chat(
+    #     prompt=prompt,
+    #     history=[],
+    #     actor="personal assistant",
+    #     max_tokens=200,
+    #     accuracy="medium",
+    #     stream=True,
+    #     session_id="test",
+    # )
+    audio_file = open(Path("resources/test_mic.webm"), "rb")
+    transcript = voice_to_text(audio_file)
+    print(transcript)
