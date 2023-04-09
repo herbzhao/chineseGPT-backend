@@ -1,6 +1,8 @@
 accuracy_temperatures_map = {"low": 1, "medium": 0.5, "high": 0.2}
 HISTORY_MAX_LENGTH = 10
 HISTORY_MAX_TEXT = 100
+LANGUAGE_DETECT_CONFIDENCE = 0.5
+EXPECTED_LANGUAGE = ["en", "zh"]
 MODEL = "gpt-3.5-turbo-0301"
 system_prompts = {
     "personal assistant": "I want you to act as a personal assistant. I will provide you with questions related to daily lives.",

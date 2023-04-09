@@ -18,6 +18,9 @@ fastapi = "*"
 uvicorn = "*"
 websockets = "*"
 pydub = "*"
+langid = "*"
+fastlid = "*"
+fasttext = "*"
 
 [dev-packages]
 black = "*"

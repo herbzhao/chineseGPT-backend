@@ -7,7 +7,9 @@ from pydub import (
     AudioSegment,
     silence,
 )
+from fastlid import fastlid
 
+from parameters import LANGUAGE_DETECT_CONFIDENCE, EXPECTED_LANGUAGE
 from backend_functions import voice_to_text
 
 
@@ -28,8 +30,8 @@ def load_chunks_from_folder(folder_name: str) -> List[bytes]:
     return chunks
 
 
-def join_webm_chunks(chunks: List[bytes]) -> bytes:
-    """Join chunks is a function that takes a list of byte strings as input, and returns a list of io.BytesIO objects as output.
+def join_webm_chunks_to_segment(chunks: List[bytes]) -> bytes:
+    """Join all available chunks into a single byte string.
 
     Args:
         chunks (list): A list of byte strings.
@@ -37,15 +39,39 @@ def join_webm_chunks(chunks: List[bytes]) -> bytes:
     Returns:
         list: A list of io.BytesIO objects.
     """
-    joined_chunks_io = []
     # include all previous chunks (the headers in the current chunk)
-    joined_chunks = [b"".join(chunks[: i + 1]) for i, _ in enumerate(chunks)]
+    joined_chunks = b"".join(chunks)
     # save the byte string to a different filename on disk
-    for i, chunk in enumerate(joined_chunks):
-        # save the byte string to io.BytesIO
-        joined_chunks_io.append(io.BytesIO(chunk))
+    joined_chunks_io = io.BytesIO(joined_chunks)
+    # convert the byte string to an AudioSegment
+    segment = AudioSegment.from_file(joined_chunks_io, format="webm")
 
-    return joined_chunks_io
+    return segment
+
+
+def split_segment_by_silence(
+    segment: AudioSegment, silence_durations: int = 200, silence_thresh: int = -50
+) -> list[AudioSegment]:
+    """Remove silence from the beginning and end of each segment in a list of segments.
+
+    Args:
+        segments (AudioSegment): AudioSegment object.
+        silence_durations (int, optional): Duration of silence required to trigger removal. Defaults to 200.
+        silence_thresh (int, optional): Threshold in dBFS below which samples are considered silence. Defaults to -50.
+
+    Returns:
+        list[AudioSegment]: List of AudioSegment objects with silence removed from the beginning and end.
+    """
+
+    non_silent_ranges = silence.detect_nonsilent(
+        segment, min_silence_len=silence_durations, silence_thresh=silence_thresh
+    )
+    # discard the range that ends together with the end of the segment
+    non_silent_ranges = [r for r in non_silent_ranges if r[1] != len(segment)]
+    split_segments = [segment[r[0] : r[1]] for r in non_silent_ranges]
+    # print(f"Split {len(segment)} into {len(split_segments)} segments")
+
+    return split_segments
 
 
 def convert_chunks_to_segments(chunks: List[bytes]) -> List[AudioSegment]:
@@ -129,7 +155,9 @@ def remove_overlap(segments: List[AudioSegment]) -> List[AudioSegment]:
 
 
 def remove_silence(
-    segments: list, silence_durations: int = 200, silence_thresh: int = -50
+    segment: AudioSegment,
+    silcence_durations: int = 200,
+    silence_thresh: float = -50,
 ) -> list[AudioSegment]:
     """Remove silence from the beginning and end of each segment in a list of segments.
 
@@ -141,12 +169,12 @@ def remove_silence(
     Returns:
         list[AudioSegment]: List of AudioSegment objects with silence removed from the beginning and end.
     """
-    # use split_on_silence to split the audio segments into smaller segments using the last semgent
-    split_segments = silence.split_on_silence(
-        segments[-1], min_silence_len=silence_durations, silence_thresh=silence_thresh
+    # remove the leading and trailing silence
+    segment = silence.detect_silence(
+        segment, min_silence_len=silcence_durations, silence_thresh=silence_thresh
     )
-
-    return split_segments
+    # remove the 1st and
+    return segment
 
 
 def detect_break(
@@ -172,19 +200,32 @@ def detect_break(
 
 if __name__ == "__main__":
     chunks = load_chunks_from_folder("resources/chunks")
-    joined_chunks_io = join_webm_chunks(chunks)
-    segments = convert_chunks_to_segments(joined_chunks_io)
-    save_segments(segments, "resources/chunks/segments")
-    non_overlap_segments = remove_overlap(segments)
-    save_segments(non_overlap_segments, "resources/chunks/non_overlap")
-    segments_io = save_segments_to_io(non_overlap_segments)
-    for segment_io in segments_io:
-        voice_to_text(segment_io)
+    segment = join_webm_chunks_to_segment(chunks)
 
-    segments_io = save_segments_to_io(segments)
-    # run against the complete segment
-    voice_to_text(segments_io[-1])
+    transcribed_segment_length = 0
+    language = None
+    for i, _ in enumerate(chunks):
+        segment = join_webm_chunks_to_segment(chunks[: i + 1])
+        split_segments = split_segment_by_silence(segment)
+        # don't transcribe the segments that have already been transcribed
+        split_segments = split_segments[transcribed_segment_length:]
+        segments_io = save_segments_to_io(split_segments)
+        for segment_io in segments_io:
+            transcript = voice_to_text(segment_io, language=language)
+            # use the language of the first segment
+            if language is None:
+                fastlid.set_languages = EXPECTED_LANGUAGE
+                predicted_language = fastlid(transcript)
+                # if the confidence is low, then don't set the language yet
+                if predicted_language[1] > LANGUAGE_DETECT_CONFIDENCE:
+                    language = predicted_language[0]
+                    print("set language to", language)
+            print(transcript)
 
-    # segments = remove_silence(segments)
-    # save_segments(segments, "resources/chunks/silence_split")
-    # voice_to_text()
+        transcribed_segment_length += len(split_segments)
+
+        if i == len(chunks) - 1:
+            # save the audio segments to different files
+            segments_io = save_segments_to_io([segment])
+            transcript = voice_to_text(segments_io[0], language=language)
+            print(transcript)

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import List, Optional
 import tiktoken
 import tempfile
-import io
 
 from pydub import (
     AudioSegment,
@@ -171,41 +170,38 @@ def calculate_token_number(messages, model=MODEL):
         )
 
 
-def voice_to_text(audio_file):
-    """This function is used to convert a voice recording to text.
+def voice_to_text(
+    audio_file: str, accuracy: str = "medium", language: Optional[str] = None
+) -> str:
+    """Converts an audio file to text. Returns a string of the text.
 
-    This function is used to convert a voice recording to text.
-    It uses the OpenAI's whisper Speech-to-Text API.
-
-    Returns:
-        str: The text that was converted from the voice recording
+    audio_file : str
+        The path to the audio file.
+    accuracy : str, optional
+        The accuracy of the transcription. Must be one of "high", "medium",
+        or "low". Defaults to "medium".
+    language : Optional[str], optional
+        The language of the audio file. Defaults to None.
     """
-    # if the file is a byte string, save it to a temporary file
-    if isinstance(audio_file, bytes):
-        # can also use io.BytesIO(y['data'])
-        with tempfile.NamedTemporaryFile(
-            dir="./temp", suffix=".webm", delete=False
-        ) as temp_file:
-            temp_file.write(audio_file)
-            temp_file.seek(0)
-            # Pass the file object to your backend function
-            temp_path = Path(temp_file.name)
-            # relative path to the file
-            temp_path = temp_path.relative_to(Path.cwd())
-            print("\n\n\n")
-            print(temp_path)
-            print("\n\n\n")
-            with open(temp_path, "rb") as audio_file:
-                transcript = openai.Audio.transcribe("whisper-1", audio_file)["text"]
-
-    else:
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)["text"]
-
-    print("\n\n\n")
-    print(transcript)
-    print("\n\n\n")
+    # if audiofile has no name attribute, assign an arbitrary name
+    transcript = openai.Audio.transcribe(
+        model="whisper-1",
+        file=audio_file,
+        temperature=accuracy_temperatures_map[accuracy],
+        language=language,
+    )["text"]
 
     return transcript
+
+
+def detect_language(text: str) -> str:
+    """Detects the language of a text string. Returns a string of the language.
+
+    text : str
+        The text to detect the language of.
+    """
+    language = openai.Language.detect(text=text)["language"]
+    return language
 
 
 if __name__ == "__main__":
