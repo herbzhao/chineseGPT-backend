@@ -23,6 +23,7 @@ fastlid = "*"
 fasttext = "*"
 noisereduce = "*"
 scipy = "*"
+azure-cognitiveservices-speech = "*"
 
 [dev-packages]
 black = "*"

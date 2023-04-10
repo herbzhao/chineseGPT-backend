@@ -7,6 +7,7 @@ from pydub import (
     AudioSegment,
     silence,
 )
+import asyncio
 from noisereduce import reduce_noise
 from scipy.io import wavfile
 
@@ -69,8 +70,8 @@ def split_segment_equally(segment, split_duration=2000):
     split_segments = []
     for i in range(0, len(segment), split_duration):
         split_segments.append(segment[i : i + split_duration])
-    # include the last segment if it is less than split_duration
-    if len(split_segments[-1]) < split_duration:
+    # merge the last segment if it is less than split_duration
+    if len(split_segments) > 1 and len(split_segments[-1]) < split_duration:
         split_segments[-2] += split_segments[-1]
         split_segments.pop()
     return split_segments, [len(s) for s in split_segments]
@@ -264,31 +265,6 @@ def detect_audio_stop_old(
     return True if len(silcence_segments) > 0 else False
 
 
-def transcribing_chunks(chunks, transcribed_segment_length=0):
-    segment = join_webm_chunks_to_segment(chunks)
-    split_segments, non_silent_ranges = split_segment_by_silence(segment)
-    # check if the segment contains end of speech
-    if detect_audio_stop(non_silent_ranges, len(segment)):
-        # combine the split segments into one segment
-        segment = sum(split_segments)
-        segment_io = save_segments_to_io([segment])[0]
-        # save the segment to a file
-        save_segments([segment], "resources/chunks/segments")
-        print("Transcribing the entire segment")
-        transcripts = [voice_to_text(segment_io)]
-        stop_transcribing = True
-    else:
-        # don't transcribe the segments that have already been transcribed
-        split_segments = split_segments[transcribed_segment_length:]
-        segments_io = save_segments_to_io(split_segments)
-        transcripts = []
-        for segment_io in segments_io:
-            transcripts.append(voice_to_text(segment_io))
-        transcribed_segment_length += len(split_segments)
-        stop_transcribing = False
-    return transcripts, transcribed_segment_length, stop_transcribing
-
-
 def noise_reduction(segment):
     segment = segment.set_channels(1)
     # export segment as wave to io.BytesIO
@@ -320,10 +296,19 @@ def detect_audio_stop_by_transcript(transcripts):
         bool: the user stopped speaking
     """
     # if there is any silence is longer than the silence duration, then the user stopped speaking
-    if len(transcripts) > 0:
-        if len(transcripts[-1]) == 0:
-            return True
-    return False
+    if len(transcripts) > 0 and transcripts[-1] == "":
+        return True
+    else:
+        return False
+
+
+async def transcribe_segments_async(segments, transcripts=[], language="zh"):
+    segments_io = save_segments_to_io(segments)
+    for segment_io in segments_io:
+        transcripts.append(
+            await voice_to_text_async(segment_io, language=language, accuracy="medium")
+        )
+    return transcripts
 
 
 async def transcribing_chunks_async(
@@ -331,41 +316,53 @@ async def transcribing_chunks_async(
 ):
     transcripts = transcripts
     segment = join_webm_chunks_to_segment(chunks)
-    split_segments = split_segment_equally(segment)
+    # only need to transcribe the new segments
+    splitted_segments, _ = split_segment_equally(segment[transcribed_segment_length:])
+    transcribed_segment_length = len(segment)
+
+    transcripts = await transcribe_segments_async(
+        splitted_segments, transcripts, language=language
+    )
+    stop_transcribing = False
+
     # check if the segment contains end of speech
     if detect_audio_stop_by_transcript(transcripts):
-        # combine the split segments into one segment
-        segment_io = save_segments_to_io([segment])[0]
-        # save the segment to a file
-        save_segments([segment], "resources/chunks/complete")
         print("Transcribing the entire segment")
-        transcripts = [await voice_to_text_async(segment_io, language=language)]
+        transcripts = await transcribe_segments_async(
+            [segment], transcripts, language=language
+        )
         stop_transcribing = True
-    else:
-        # don't transcribe the segments that have already been transcribed
-        split_segments = split_segments[transcribed_segment_length:]
-        segments_io = save_segments_to_io(split_segments)
-        save_segments(split_segments, "resources/chunks/split")
-        for segment_io in segments_io:
-            temp_transcripts = await voice_to_text_async(segment_io, language=language)
-            transcript += temp_transcripts[transcribed_segment_length:]
-        transcribed_segment_length += len(split_segments)
-        stop_transcribing = False
+
     return transcripts, transcribed_segment_length, stop_transcribing
 
 
 if __name__ == "__main__":
-    chunks = load_chunks_from_folder("resources/chunks")
-    segment = join_webm_chunks_to_segment(chunks)
-    split_segments, _ = split_segment_equally(segment)
-    segments_io = save_segments_to_io(split_segments)
-    transcripts = []
-    for segment_io in segments_io:
-        transcripts.append(voice_to_text(segment_io))
-    print(transcripts)
-    segment_io = save_segments_to_io([segment])[0]
-    print(voice_to_text(segment_io))
-    split_segments = split_segment_by_silence(segment)[0]
-    joined_segment = sum(split_segments)
-    segment_io = save_segments_to_io([joined_segment])[0]
-    print(voice_to_text(segment_io))
+
+    async def main():
+        chunks = load_chunks_from_folder("resources/chunks")
+        voice_chunks = []
+        transcribed_segment_length = 0
+        transcripts = []
+        printed_transcripts_number = 0
+        # mimic the chunks being sent to the server
+        for i, _ in enumerate(chunks):
+            chunk = chunks[i]
+            voice_chunks.append(chunk)
+            (
+                transcripts,
+                transcribed_segment_length,
+                stop_transcribing,
+            ) = await transcribing_chunks_async(
+                voice_chunks,
+                transcribed_segment_length,
+                transcripts=transcripts,
+                language="zh",
+            )
+            print(transcripts[printed_transcripts_number:])
+            printed_transcripts_number = len(transcripts)
+
+            if stop_transcribing:
+                print("Transcribing the entire segment")
+                print(transcripts[-1])
+
+    asyncio.run(main())

@@ -4,8 +4,7 @@ from dotenv import load_dotenv
 import os
 import time
 from backend_functions import chat
-from audio_processing import transcribing_chunks, transcribing_chunks_async
-import json
+from audio_processing import transcribing_chunks_async
 from pydantic import BaseModel
 import uvicorn
 
@@ -134,30 +133,46 @@ async def audio_stream(websocket: WebSocket):
     await websocket.accept()
     voice_chunks = []
     transcribed_segment_length = 0
+    printed_transcripts_number = 0
+    transcripts = []
     print("websocket connected")
     while True:
         voice_chunk = await websocket.receive_bytes()
         voice_chunks.append(voice_chunk)
+        # save chunk to a local file
+        with open(f"resources/chunks/{len(voice_chunks)}.webm", "wb") as f:
+            f.write(voice_chunk)
+
+        # a function to handle gradually increasing chunks
         (
             transcripts,
             transcribed_segment_length,
             stop_transcribing,
-        ) = await transcribing_chunks_async(voice_chunks, transcribed_segment_length)
-        if stop_transcribing:
-            # only 1 segment is used and only 1 transcript is returned
-            transcript = transcripts[0]
-            await websocket.send_json({"transcript": transcripts[0], "command": "DONE"})
-            print(transcripts[0])
+        ) = await transcribing_chunks_async(
+            voice_chunks,
+            transcribed_segment_length,
+            transcripts=transcripts,
+            language=app.language,
+        )
+        if not stop_transcribing:
+            # only print the latest transcript
+            for transcript in transcripts[printed_transcripts_number:]:
+                print(transcript)
+                await websocket.send_json({"transcript": transcript + " "})
+
+            printed_transcripts_number = len(transcripts)
+
+        else:
+            await websocket.send_json(
+                {"transcript": transcripts[-1], "command": "DONE"}
+            )
+            print(transcripts[-1])
             print("disconnecting websocket...")
             # await websocket.close(code=1000, reason=None)
             voice_chunks = []
             transcribed_segment_length = 0
             stop_transcribing = False
             break
-        else:
-            for transcript in transcripts:
-                print(transcript)
-                await websocket.send_json({"transcript": transcript})
 
 
 if __name__ == "__main__":

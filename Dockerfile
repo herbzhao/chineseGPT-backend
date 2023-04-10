@@ -8,8 +8,9 @@ WORKDIR /code
 COPY ./ /code/
 
 # 
-# install ffmpeg
-RUN apt-get update && apt-get install -y ffmpeg libavcodec-extra
+# install dependencies
+RUN apt-get update && apt-get install -y ffmpeg libavcodec-extra libssl-dev libasound2
+
 # use pipenv to install dependencies
 RUN pip3 install pipenv
 RUN pipenv install --system --deploy --ignore-pipfile

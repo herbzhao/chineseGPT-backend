@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "693a0e98e20b845590f28a7001a03e319007547a1fac9781763d671932e06c62"
+            "sha256": "6f47dcf7a2fa37be37f607c0916f9b7ad7d67b4b3362af4d03804bac786cf5c3"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -154,6 +154,18 @@
             ],
             "markers": "python_version >= '3.6'",
             "version": "==3.0.0"
+        },
+        "azure-cognitiveservices-speech": {
+            "hashes": [
+                "sha256:43f9bf979526115621fe8e6167b5c82b14c8dd439b5cf2a91bc671baec7c1eab",
+                "sha256:5634a4af4fedfe300d9b9a41dedc8953ae65f70963be995eda6362650c37b149",
+                "sha256:bc8806e1aff8b99d17fd5267306c4144b70770285aa183fb0cb59b3bd11c4d42",
+                "sha256:d82077a47cd8916aaab4e1aa9f057a54eb2df97371b898ed0c1c7e652644b2d2",
+                "sha256:e0c0030e77feb241af4332624d603427b58d390365c02f600158ee0534c49759",
+                "sha256:ed535f10d0835db305dcddbc3c31b65fc0902380c3fc8c7a2b94f106590f7073"
+            ],
+            "index": "pypi",
+            "version": "==1.27.0"
         },
         "bidict": {
             "hashes": [
@@ -419,7 +431,7 @@
                 "sha256:224e32b03eb46be70e12ef6d64e0be123a64e621ab4c0822ff6d450d52a540b9",
                 "sha256:89141536394f909066cabd112e3e1a37e4e654db00a25308b0f130bc3152eb46"
             ],
-            "markers": "python_version >= '3.7' and python_version < '4.0'",
+            "markers": "python_version >= '3.7' and python_version < '4'",
             "version": "==2.3.0"
         },
         "eventlet": {
