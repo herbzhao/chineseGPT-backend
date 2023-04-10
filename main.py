@@ -142,9 +142,7 @@ async def audio_stream(websocket: WebSocket):
             transcripts,
             transcribed_segment_length,
             stop_transcribing,
-        ) = await transcribing_chunks_async(
-            voice_chunks, transcribed_segment_length, app.language
-        )
+        ) = await transcribing_chunks_async(voice_chunks, transcribed_segment_length)
         if stop_transcribing:
             # only 1 segment is used and only 1 transcript is returned
             transcript = transcripts[0]

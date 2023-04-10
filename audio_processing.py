@@ -60,7 +60,7 @@ def split_segment_by_silence(
     silence_durations: int = SILENCE_SPLIT_DURATION,
     silence_thresh: int = SILENCE_THRESHOLD,
     maximum_length: int = 2000,
-    padding: int = 0,
+    padding: int = 100,
 ) -> list[AudioSegment]:
     """Remove silence from the beginning and end of each segment in a list of segments.
 
@@ -78,7 +78,11 @@ def split_segment_by_silence(
     non_silent_ranges = silence.detect_nonsilent(
         segment, min_silence_len=silence_durations, silence_thresh=silence_thresh
     )
-
+    # add padding to the beginning and end of each range
+    non_silent_ranges = [
+        (max([r[0] - padding, 0]), min([r[1] + padding, len(segment)]))
+        for r in non_silent_ranges
+    ]
     # discard the range that ends together with the end of the segment
     non_silent_ranges = [r for r in non_silent_ranges if r[1] != len(segment)]
 
