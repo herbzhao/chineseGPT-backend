@@ -7,7 +7,8 @@ from pydub import (
     AudioSegment,
     silence,
 )
-from fastlid import fastlid
+from noisereduce import reduce_noise
+from scipy.io import wavfile
 
 from parameters import (
     LANGUAGE_DETECT_CONFIDENCE,
@@ -55,6 +56,26 @@ def join_webm_chunks_to_segment(chunks: List[bytes]) -> bytes:
     return segment
 
 
+def split_segment_equally(segment, split_duration=2000):
+    """Split a segment into equally sized segments.
+
+    Args:
+        segment (AudioSegment): AudioSegment object.
+        split_duration (int): Duration of each segment.
+
+    Returns:
+        list: List of AudioSegment objects.
+    """
+    split_segments = []
+    for i in range(0, len(segment), split_duration):
+        split_segments.append(segment[i : i + split_duration])
+    # include the last segment if it is less than split_duration
+    if len(split_segments[-1]) < split_duration:
+        split_segments[-2] += split_segments[-1]
+        split_segments.pop()
+    return split_segments, [len(s) for s in split_segments]
+
+
 def split_segment_by_silence(
     segment: AudioSegment,
     silence_durations: int = SILENCE_SPLIT_DURATION,
@@ -74,6 +95,8 @@ def split_segment_by_silence(
     Returns:
         list[AudioSegment]: List of AudioSegment objects with silence removed from the beginning and end.
     """
+    # use dbFS to calculate the threshold
+    silence_thresh = segment.dBFS - 5
 
     non_silent_ranges = silence.detect_nonsilent(
         segment, min_silence_len=silence_durations, silence_thresh=silence_thresh
@@ -84,7 +107,8 @@ def split_segment_by_silence(
         for r in non_silent_ranges
     ]
     # discard the range that ends together with the end of the segment
-    non_silent_ranges = [r for r in non_silent_ranges if r[1] != len(segment)]
+    if len(non_silent_ranges) > 1:
+        non_silent_ranges = [r for r in non_silent_ranges if r[1] != len(segment)]
 
     split_segments = [segment[r[0] : r[1]] for r in non_silent_ranges]
     # print(f"Split {len(segment)} into {len(split_segments)} se gments")
@@ -265,18 +289,55 @@ def transcribing_chunks(chunks, transcribed_segment_length=0):
     return transcripts, transcribed_segment_length, stop_transcribing
 
 
+def noise_reduction(segment):
+    segment = segment.set_channels(1)
+    # export segment as wave to io.BytesIO
+    segment_io = io.BytesIO()
+    # generate a random uuid
+    segment_io.name = f"{str(uuid.uuid4())}.wav"
+    segment.export(segment_io, format="wav")
+    # noise reduction
+    rate, data = wavfile.read(segment_io)
+    noise_reduced_data = reduce_noise(y=data, sr=rate, stationary=False)
+    wavfile.write(segment_io, rate, noise_reduced_data)
+    segment = AudioSegment.from_file(segment_io, format="wav")
+    # convert to webm
+    segment_io = io.BytesIO()
+    segment_io.name = f"{str(uuid.uuid4())}.webm"
+    segment.export(segment_io, format="webm")
+    # read the segment back into memory
+    segment = AudioSegment.from_file(segment_io, format="webm")
+    return segment
+
+
+def detect_audio_stop_by_transcript(transcripts):
+    """Detects breaks in audio recording
+
+    Args:
+        transcripts (list): List of transcripts
+
+    Returns:
+        bool: the user stopped speaking
+    """
+    # if there is any silence is longer than the silence duration, then the user stopped speaking
+    if len(transcripts) > 0:
+        if len(transcripts[-1]) == 0:
+            return True
+    return False
+
+
 async def transcribing_chunks_async(
-    chunks, transcribed_segment_length=0, language="zh"
+    chunks, transcribed_segment_length=0, transcripts=[], language="zh"
 ):
+    transcripts = transcripts
     segment = join_webm_chunks_to_segment(chunks)
-    split_segments, non_silent_ranges = split_segment_by_silence(segment, padding=100)
+    split_segments = split_segment_equally(segment)
     # check if the segment contains end of speech
-    if detect_audio_stop(non_silent_ranges, len(segment)):
+    if detect_audio_stop_by_transcript(transcripts):
         # combine the split segments into one segment
-        segment = sum(split_segments)
         segment_io = save_segments_to_io([segment])[0]
         # save the segment to a file
-        save_segments([segment], "resources/chunks/segments")
+        save_segments([segment], "resources/chunks/complete")
         print("Transcribing the entire segment")
         transcripts = [await voice_to_text_async(segment_io, language=language)]
         stop_transcribing = True
@@ -284,9 +345,10 @@ async def transcribing_chunks_async(
         # don't transcribe the segments that have already been transcribed
         split_segments = split_segments[transcribed_segment_length:]
         segments_io = save_segments_to_io(split_segments)
-        transcripts = []
+        save_segments(split_segments, "resources/chunks/split")
         for segment_io in segments_io:
-            transcripts.append(await voice_to_text_async(segment_io, language=language))
+            temp_transcripts = await voice_to_text_async(segment_io, language=language)
+            transcript += temp_transcripts[transcribed_segment_length:]
         transcribed_segment_length += len(split_segments)
         stop_transcribing = False
     return transcripts, transcribed_segment_length, stop_transcribing
@@ -294,13 +356,16 @@ async def transcribing_chunks_async(
 
 if __name__ == "__main__":
     chunks = load_chunks_from_folder("resources/chunks")
-    transcribed_segment_length = 0
-    for i, _ in enumerate(chunks):
-        (
-            transcripts,
-            transcribed_segment_length,
-            stop_transcribing,
-        ) = transcribing_chunks(chunks[: i + 1], transcribed_segment_length)
-        print(transcripts)
-        if stop_transcribing:
-            break
+    segment = join_webm_chunks_to_segment(chunks)
+    split_segments, _ = split_segment_equally(segment)
+    segments_io = save_segments_to_io(split_segments)
+    transcripts = []
+    for segment_io in segments_io:
+        transcripts.append(voice_to_text(segment_io))
+    print(transcripts)
+    segment_io = save_segments_to_io([segment])[0]
+    print(voice_to_text(segment_io))
+    split_segments = split_segment_by_silence(segment)[0]
+    joined_segment = sum(split_segments)
+    segment_io = save_segments_to_io([joined_segment])[0]
+    print(voice_to_text(segment_io))

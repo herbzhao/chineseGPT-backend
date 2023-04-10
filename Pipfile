@@ -21,6 +21,8 @@ pydub = "*"
 langid = "*"
 fastlid = "*"
 fasttext = "*"
+noisereduce = "*"
+scipy = "*"
 
 [dev-packages]
 black = "*"

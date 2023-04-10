@@ -223,7 +223,10 @@ if __name__ == "__main__":
     #     stream=True,
     #     session_id="test",
     # )
-    # audio_file = open(Path("resources/test_mic.webm"), "rb")
-    # transcript = voice_to_text(audio_file)
-    # print(transcript)
-    join_webm_chunks("resources/chunks")
+    audio_file = open(Path("resources/chunks/noise_reduced/segment0.webm"), "rb")
+    audio_file = open(Path("resources/chunks/Recording (11).webm"), "rb")
+
+    transcript = voice_to_text(audio_file, language="zh")
+    print(transcript)
+    # Whipser:测试一下测试一下a b c d e f g 作为一名AI语言模型 我无法为你制作具体的视频或音频片段 我的能力是根据输入的文本来生成自然语言响应
+    # AZURE: 测试一下测试一下ABCDEFG。作为一名AI语言模型，我无法为你制作具体的视频或音频片段。我的能力是根据输入的文本来生成自然语言响应。
