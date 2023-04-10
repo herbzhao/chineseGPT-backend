@@ -16,10 +16,14 @@ if os.path.exists(".env.production") and os.getenv("ENVIRONMENT") == "production
     load_dotenv(".env.production")
 
 app = FastAPI()
-
+# set a default language on startup
 # cors: https://fastapi.tiangolo.com/tutorial/cors/
 frontend_url = os.getenv("FRONTEND_URL")
-origins = [frontend_url]
+print(frontend_url)
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -27,6 +31,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# https://fastapi.tiangolo.com/advanced/events/
+@app.on_event("startup")
+async def startup_event():
+    app.language = "en"
+    # perform additional initialization tasks here
 
 
 @app.get("/test")
@@ -65,9 +76,6 @@ def send_response(prompt_request: PromptRequest) -> None:
     print(f"Received prompt: {prompt}")
     print(f"Received history: {history}")
     print("not in streaming mode")
-    # convert history to list of dict for chat function
-    # time.sleep(0.2)
-    # return {"content": f"{prompt.prompt}!", "author": "bot", "loading": False}
     response_message = chat(
         prompt=prompt,
         history=history,
@@ -111,9 +119,21 @@ async def chat_stream(websocket: WebSocket):
         await websocket.send_json({"content": "DONE"})
 
 
+class AudioMetaData(BaseModel):
+    language: str
+
+
+# an endpoint to receive metadata from the client
+@app.post("/chat/stream/audioMetadata")
+def receive_metadata(audio_metadata: AudioMetaData):
+    app.language = audio_metadata.language
+    print(f"Changed the language to: {app.language}")
+    return {"msg": "received metadata"}
+
+
 # https://www.starlette.io/websockets/
 @app.websocket("/chat/stream/audioTranscript")
-async def chat_stream(websocket: WebSocket):
+async def audio_stream(websocket: WebSocket):
     await websocket.accept()
     voice_chunks = []
     transcribed_segment_length = 0
@@ -125,7 +145,9 @@ async def chat_stream(websocket: WebSocket):
             transcripts,
             transcribed_segment_length,
             stop_transcribing,
-        ) = await transcribing_chunks_async(voice_chunks, transcribed_segment_length)
+        ) = await transcribing_chunks_async(
+            voice_chunks, transcribed_segment_length, app.language
+        )
         if stop_transcribing:
             # only 1 segment is used and only 1 transcript is returned
             transcript = transcripts[0]

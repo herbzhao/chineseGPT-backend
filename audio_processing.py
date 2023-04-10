@@ -60,6 +60,7 @@ def split_segment_by_silence(
     silence_durations: int = SILENCE_SPLIT_DURATION,
     silence_thresh: int = SILENCE_THRESHOLD,
     maximum_length: int = 2000,
+    padding: int = 0,
 ) -> list[AudioSegment]:
     """Remove silence from the beginning and end of each segment in a list of segments.
 
@@ -68,6 +69,7 @@ def split_segment_by_silence(
         silence_durations (int, optional): Duration of silence required to trigger removal. Defaults to 200.
         silence_thresh (int, optional): Threshold in dBFS below which samples are considered silence. Defaults to -50.
         maximum_length (int, optional): Maximum length of a segment. Defaults to 2000. will break up even if no silence is detected.
+        padding (int, optional): Padding to add to the beginning and end of each segment. Defaults to 0.
 
     Returns:
         list[AudioSegment]: List of AudioSegment objects with silence removed from the beginning and end.
@@ -259,9 +261,11 @@ def transcribing_chunks(chunks, transcribed_segment_length=0):
     return transcripts, transcribed_segment_length, stop_transcribing
 
 
-async def transcribing_chunks_async(chunks, transcribed_segment_length=0):
+async def transcribing_chunks_async(
+    chunks, transcribed_segment_length=0, language="zh"
+):
     segment = join_webm_chunks_to_segment(chunks)
-    split_segments, non_silent_ranges = split_segment_by_silence(segment)
+    split_segments, non_silent_ranges = split_segment_by_silence(segment, padding=100)
     # check if the segment contains end of speech
     if detect_audio_stop(non_silent_ranges, len(segment)):
         # combine the split segments into one segment
@@ -270,7 +274,7 @@ async def transcribing_chunks_async(chunks, transcribed_segment_length=0):
         # save the segment to a file
         save_segments([segment], "resources/chunks/segments")
         print("Transcribing the entire segment")
-        transcripts = [await voice_to_text_async(segment_io)]
+        transcripts = [await voice_to_text_async(segment_io, language=language)]
         stop_transcribing = True
     else:
         # don't transcribe the segments that have already been transcribed
@@ -278,7 +282,7 @@ async def transcribing_chunks_async(chunks, transcribed_segment_length=0):
         segments_io = save_segments_to_io(split_segments)
         transcripts = []
         for segment_io in segments_io:
-            transcripts.append(await voice_to_text_async(segment_io))
+            transcripts.append(await voice_to_text_async(segment_io, language=language))
         transcribed_segment_length += len(split_segments)
         stop_transcribing = False
     return transcripts, transcribed_segment_length, stop_transcribing
