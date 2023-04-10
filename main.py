@@ -20,10 +20,7 @@ app = FastAPI()
 # cors: https://fastapi.tiangolo.com/tutorial/cors/
 frontend_url = os.getenv("FRONTEND_URL")
 print(frontend_url)
-origins = [
-    "http://localhost",
-    "http://localhost:8000",
-]
+origins = [frontend_url]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
