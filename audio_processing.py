@@ -17,6 +17,7 @@ from parameters import (
     SENTENCE_BREAK_DURATION,
     SILENCE_THRESHOLD,
     SILENCE_SPLIT_DURATION,
+    EVEN_SPLIT_LENGTH,
 )
 from backend_functions import voice_to_text, voice_to_text_async
 
@@ -57,7 +58,7 @@ def join_webm_chunks_to_segment(chunks: List[bytes]) -> bytes:
     return segment
 
 
-def split_segment_equally(segment, split_duration=2000):
+def split_segment_equally(segment, split_duration=EVEN_SPLIT_LENGTH):
     """Split a segment into equally sized segments.
 
     Args:
@@ -286,7 +287,11 @@ def noise_reduction(segment):
     return segment
 
 
-def detect_audio_stop_by_transcript(transcripts):
+def detect_audio_stop_by_transcript(
+    transcripts,
+    silence_durations=SENTENCE_BREAK_DURATION,
+    split_duration=EVEN_SPLIT_LENGTH,
+):
     """Detects breaks in audio recording
 
     Args:
@@ -295,8 +300,11 @@ def detect_audio_stop_by_transcript(transcripts):
     Returns:
         bool: the user stopped speaking
     """
+    empty_transcripts_num = int(silence_durations / split_duration)
     # if there is any silence is longer than the silence duration, then the user stopped speaking
-    if len(transcripts) > 0 and transcripts[-1] == "":
+    if len(transcripts) > 0 and all(
+        [transcript == "" for transcript in transcripts[-empty_transcripts_num:]]
+    ):
         return True
     else:
         return False
