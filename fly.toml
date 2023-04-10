@@ -7,30 +7,35 @@ mounts = []
 primary_region = "hkg"
 processes = []
 
-[build.pre]
-  # Install FFmpeg using the package manager
-  command = "apt-get update && apt-get install -y ffmpeg"
 
 [build]
-  builder = "paketobuildpacks/builder:base"
+# Install FFmpeg using the package manager
+# builder = "paketobuildpacks/builder:base"
+# builder = "heroku/buildpacks:18"
+# buildpacks = [
+#     "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git",
+# ]
+dockerfile = "Dockerfile"
 
 [env]
-  PORT = "8080"
+PORT = "8080"
+FFMPEG_PATH = "/usr/bin/ffmpeg"
+ENVIRONMENT = "production"
 
 [[services]]
-  internal_port = 8080
-  processes = ["app"]
-  protocol = "tcp"
-  [services.concurrency]
-    hard_limit = 25
-    soft_limit = 20
-    type = "connections"
+internal_port = 8080
+processes = ["app"]
+protocol = "tcp"
+[services.concurrency]
+hard_limit = 25
+soft_limit = 20
+type = "connections"
 
-  [[services.ports]]
-    force_https = true
-    handlers = ["http"]
-    port = 80
+[[services.ports]]
+force_https = true
+handlers = ["http"]
+port = 80
 
-  [[services.ports]]
-    handlers = ["tls", "http"]
-    port = 443
+[[services.ports]]
+handlers = ["tls", "http"]
+port = 443

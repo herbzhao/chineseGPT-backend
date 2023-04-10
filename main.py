@@ -13,13 +13,13 @@ load_dotenv()
 if os.path.exists(".env.local"):
     load_dotenv(".env.local")
 if os.path.exists(".env.production") and os.getenv("ENVIRONMENT") == "production":
+    print("GETTING PRODUCTION ENVIRONMENT VARIABLES")
     load_dotenv(".env.production")
 
 app = FastAPI()
 # set a default language on startup
 # cors: https://fastapi.tiangolo.com/tutorial/cors/
 frontend_url = os.getenv("FRONTEND_URL")
-print(frontend_url)
 origins = [frontend_url]
 app.add_middleware(
     CORSMiddleware,
