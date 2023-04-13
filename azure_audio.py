@@ -25,7 +25,23 @@ class AudioTranscripter:
         # time stamp of consumed segment alrady sent to azure
         self.consumed_segment_length = 0
         self.wav_files = []
-        self.split_length = 4000
+        self.split_length = 1000
+        self.split_append_silence = 100
+        self.end_of_stream_silence = 2000
+
+    def convert_webm_to_wav(self, webm_file, output_filename, append_silence_length=0):
+        audio_segment = AudioSegment.from_file(webm_file, format="webm")
+        silence = AudioSegment.silent(duration=append_silence_length)
+        # append silence to the end of the audio segment
+        audio_segment += silence
+
+        # change it to (16 kHz, 16-bit, mono channel)
+        audio_segment = audio_segment.set_frame_rate(16000)
+        audio_segment = audio_segment.set_channels(1)
+        audio_segment = audio_segment.set_sample_width(2)
+
+        audio_segment.export(output_filename, format="wav")
+        return output_filename
 
     def chunk_receiver(self, folder_name):
         # mimic the behaviour of receiving chunk every 2.2 seconds
@@ -35,7 +51,8 @@ class AudioTranscripter:
         filenames = [
             filename for filename in Path(folder_name).iterdir() if filename.is_file()
         ]
-        for filename in filenames:
+        combined_audio_segment = AudioSegment.empty()
+        for i, filename in enumerate(filenames):
             print(filename)
             # async sleep for 2.2 seconds
             with open(filename, "rb") as f:
@@ -47,7 +64,6 @@ class AudioTranscripter:
             # split the audio segment into 1 second chunks
             audio_segments = []
             # divide any unconsumed audio segment into 1 second chunks
-            # TODO: also need to take care of the case where the audio segment is shorter than 1 second in the end
             dividers = list(
                 range(
                     self.consumed_segment_length, len(audio_segment), self.split_length
@@ -58,23 +74,52 @@ class AudioTranscripter:
                 for i, _ in enumerate(dividers)
                 if i < len(dividers) - 1
             ]
-            for start, end in divided_lengths:
-                audio_segments.append(audio_segment[start:end])
+            # Take care of the case where the audio segment is shorter than 1 second in the end
+            if i == len(filenames) - 1:
+                divided_lengths.append([dividers[-1], len(audio_segment)])
+
+            print(divided_lengths)
+            for j, (start, end) in enumerate(divided_lengths):
+                webm_file = io.BytesIO()
+                audio_segment[start:end].export(webm_file, format="webm")
+                self.audio_segments.append(audio_segment[start:end])
+                combined_audio_segment += audio_segment[start:end]
+
+                append_silence_length = (
+                    self.end_of_stream_silence
+                    if ((j == len(divided_lengths) - 1) and (i == len(filenames) - 1))
+                    else self.split_append_silence
+                )
+
+                self.convert_webm_to_wav(
+                    webm_file,
+                    f"resources/chunks/split/{len(self.audio_segments)}.wav",
+                    append_silence_length=append_silence_length,
+                )
 
             self.consumed_segment_length = dividers[-1]
-            # store the audio segments
-            self.audio_segments += audio_segments
 
-            for i, audio_segment in enumerate(audio_segments):
-                # convert audio segment to wav and save to bytesIO
-                # with io.BytesIO() as wav_file:
-                audio_segment.export(
-                    f"resources/chunks/split/{i+len(self.audio_segments)}.wav",
-                    format="wav",
-                )
-                # send the wav file to azure
-                # self.push_stream.write(wav_file.getvalue())
-                # print("sending to azure")
+        # combine the split audio segments into one audio segment for debugging
+        combined_audio_segment = combined_audio_segment.set_frame_rate(16000)
+        combined_audio_segment = combined_audio_segment.set_channels(1)
+        combined_audio_segment = combined_audio_segment.set_sample_width(2)
+        combined_audio_segment.export(
+            "resources/chunks/complete/combined_audio_segment.wav", format="wav"
+        )
+
+        #  save the entire chunks as a file for debugging
+        # save the output to a bytesio
+        wav_file = io.BytesIO()
+        output_file = self.convert_webm_to_wav(
+            io.BytesIO(self.chunks),
+            wav_file,
+            append_silence_length=self.end_of_stream_silence,
+        )
+        output_file = self.convert_webm_to_wav(
+            io.BytesIO(self.chunks),
+            "resources/chunks/complete/entire_chunks.wav",
+            append_silence_length=self.end_of_stream_silence,
+        )
 
     def stream_recognize_async(self):
         speech_config = speechsdk.SpeechConfig(
@@ -101,7 +146,7 @@ class AudioTranscripter:
 
         def recognizing_callback(evt: speechsdk.SpeechRecognitionEventArgs):
             """callback for recognized event"""
-            print("RECOGNIZED: {}".format(evt))
+            print("RECOGNIZING: {}".format(evt))
 
         def recognized_callback(evt: speechsdk.SpeechRecognitionEventArgs):
             """callback for recognized event"""
@@ -118,30 +163,49 @@ class AudioTranscripter:
         # Start continuous recognition
         speech_recognizer.start_continuous_recognition_async()
 
-        filenames = [
-            filename
-            for filename in Path("resources/chunks/split").iterdir()
-            if filename.is_file()
-        ]
-        for filename in filenames:
-            with open(filename, "rb") as f:
-                self.push_stream.write(f.read())
-                print("sending to azure")
-                # time.sleep(5)
+        # 1: send entire audio at once
+        # with open("resources/chunks/complete/entire_chunks.wav", "rb") as f:
+        #     audio = AudioSegment.from_file(f)
+        #     self.push_stream.write(audio.raw_data)
+        #     time.sleep(5)
 
-        time.sleep(20)
-        # stop_cb("STOP")
-        # # Stop continuous recognition
-        # speech_recognizer.stop_continuous_recognition_async()
+        # 2: split entire audio into chunks
+        # with open("resources/chunks/complete/entire_chunks.wav", "rb") as f:
+        #     audio = AudioSegment.from_file(f)
+        #     for i in range(0, len(audio), 1000):
+        #         self.push_stream.write(audio[i : i + 1000].raw_data)
+        #         # write to a file for debugging
+        #         audio[i : i + 1000].export(
+        #             f"resources/chunks/split/2nd way_{i}.wav", format="wav"
+        #         )
+        #         time.sleep(2)
 
-        # # Close the PushAudioInputStream object
-        # self.push_stream.close()
+        # 3: read chunks
+        # filenames = [
+        #     filename
+        #     for filename in Path("resources/chunks/split").iterdir()
+        #     if filename.is_file()
+        # ]
+        # # sort the filenames by the number in the filename
+        # filenames = sorted(filenames, key=lambda x: int(x.stem))
+        # for filename in filenames:
+        #     with open(filename, "rb") as f:
+        #         print(filename)
+        #         audio = AudioSegment.from_file(f)
+        #         self.push_stream.write(audio.raw_data)
+        #         time.sleep(2)
+
+        # Stop continuous recognition
+        speech_recognizer.stop_continuous_recognition_async()
+
+        # Close the PushAudioInputStream object
+        self.push_stream.close()
 
 
 if __name__ == "__main__":
     # async def main():
     audio_transcripter = AudioTranscripter()
-    # audio_transcripter.chunk_receiver("resources/chunks")
+    audio_transcripter.chunk_receiver("resources/chunks")
     audio_transcripter.stream_recognize_async()
     # await audio_transcripter.chunk_receiver(r"resources/chunks")
 
