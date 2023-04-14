@@ -33,11 +33,10 @@ class AudioTranscriber:
         self.wav_files = []
         self.split_length = 2000
         self.split_append_silence = self.split_length // 10
-        self.end_of_stream_silence = 2000
         self.transcripts = []
         self.processing_done = False
         # if no new transcript is received for x seconds, stop the stream
-        self.timeout_diff = 2
+        self.timeout_diff = 3
         self.initial_timeout_diff = 10
 
     def convert_audio_segment_to_wav(self, audio_segment, append_silence_length=0):
@@ -81,6 +80,8 @@ class AudioTranscriber:
         filenames = [
             filename for filename in Path(folder_name).iterdir() if filename.is_file()
         ]
+        # sort the filenames
+        filenames = sorted(filenames, key=lambda x: int(x.stem.replace("audio", "")))
         # each file is a chunk
         for i, filename in enumerate(filenames):
             with open(filename, "rb") as f:
@@ -90,7 +91,7 @@ class AudioTranscriber:
                 await self.chunks_queue.put(chunk)
 
                 # mimic receiving chunks every x seconds
-                await asyncio.sleep(2)
+                await asyncio.sleep(0.5)
 
     async def chunks_handler(self):
         accumulated_chunks = b""
@@ -150,7 +151,6 @@ class AudioTranscriber:
         # Connect callbacks to the events fired by the speech recognizer
         def stop_callback(evt: speechsdk.SessionEventArgs):
             """callback that signals to stop continuous recognition upon receiving an event `evt`"""
-            self.completed = True
             print("CLOSING on {}".format(evt))
 
         self.speech_recognizer.recognizing.connect(

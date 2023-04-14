@@ -4,7 +4,7 @@ app = "gpt-api"
 kill_signal = "SIGINT"
 kill_timeout = 5
 mounts = []
-primary_region = "hkg"
+primary_region = "nrt"
 processes = []
 
 

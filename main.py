@@ -143,11 +143,12 @@ async def azure_transcript_stream(websocket: WebSocket):
     async def transcripts_handler():
         nonlocal sent_transcripts
         while True:
-            transcripts = ". ".join(audio_transcriber.transcripts)
+            transcripts = " ".join(audio_transcriber.transcripts)
             if transcripts != sent_transcripts:
-                await websocket.send_json({"transcripts": ". ".join(transcripts)})
+                print(f"transcripts: {transcripts}")
+                await websocket.send_json({"transcripts": transcripts})
                 sent_transcripts = transcripts
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
 
     print("starting transcripts handler")
     asyncio.create_task(transcripts_handler())
