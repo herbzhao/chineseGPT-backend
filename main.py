@@ -7,7 +7,8 @@ from backend_functions import chat
 from audio_processing import transcribing_chunks_async
 from pydantic import BaseModel
 import uvicorn
-from azure_audio import AzureAudio
+from azure_audio import AudioTranscriber
+import asyncio
 
 load_dotenv()
 if os.path.exists(".env.local"):
@@ -128,20 +129,32 @@ def receive_metadata(audio_metadata: AudioMetaData):
     return {"msg": "received metadata"}
 
 
-# https://www.starlette.io/websockets/
 @app.websocket("/chat/stream/azureTranscript")
 async def azure_transcript_stream(websocket: WebSocket):
     await websocket.accept()
-    voice_chunks = []
-    transcribed_segment_length = 0
-    printed_transcripts_number = 0
-    transcripts = []
-    azure_audio = AzureAudio()
+    audio_transcriber = AudioTranscriber()
+    sent_transcripts = ""
     print("websocket connected")
+    # prepare to process the chunks
+    asyncio.create_task(audio_transcriber.run())
+    print("starting transcriber")
+
+    # Start a background task to periodically check for new transcripts
+    async def transcripts_handler():
+        nonlocal sent_transcripts
+        while True:
+            transcripts = ". ".join(audio_transcriber.transcripts)
+            if transcripts != sent_transcripts:
+                await websocket.send_json({"transcripts": ". ".join(transcripts)})
+                sent_transcripts = transcripts
+            await asyncio.sleep(0.5)
+
+    print("starting transcripts handler")
+    asyncio.create_task(transcripts_handler())
     while True:
         voice_chunk = await websocket.receive_bytes()
-        voice_chunks.append(voice_chunk)
-        azure_audio.process_chunks(voice_chunks)
+        # Call the add_chunk method with the received voice_chunk
+        await audio_transcriber.add_chunk(voice_chunk)
 
 
 # https://www.starlette.io/websockets/

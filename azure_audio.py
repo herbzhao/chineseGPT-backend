@@ -12,7 +12,7 @@ import io
 import threading
 
 
-class AudioTranscripter:
+class AudioTranscriber:
     def __init__(self):
         load_dotenv()
         if os.path.exists(".env.local"):
@@ -38,6 +38,7 @@ class AudioTranscripter:
         self.processing_done = False
         # if no new transcript is received for x seconds, stop the stream
         self.timeout_diff = 2
+        self.initial_timeout_diff = 10
 
     def convert_audio_segment_to_wav(self, audio_segment, append_silence_length=0):
         silence = AudioSegment.silent(duration=append_silence_length)
@@ -73,6 +74,9 @@ class AudioTranscripter:
 
         return split_lengths
 
+    async def add_chunk(self, chunk):
+        await self.chunks_queue.put(chunk)
+
     async def dummy_chunks_receiver(self, folder_name):
         filenames = [
             filename for filename in Path(folder_name).iterdir() if filename.is_file()
@@ -82,7 +86,8 @@ class AudioTranscripter:
             with open(filename, "rb") as f:
                 # store all the chunks received so far
                 chunk = f.read()
-                self.chunks_queue.put_nowait(chunk)
+                # await self.add_chunk(chunk)
+                await self.chunks_queue.put(chunk)
 
                 # mimic receiving chunks every x seconds
                 await asyncio.sleep(2)
@@ -94,7 +99,6 @@ class AudioTranscripter:
             chunk = await self.chunks_queue.get()
             # store all the chunks received so far
             accumulated_chunks += chunk
-
             # convert chunks to audio segment
             complete_audio_segment = AudioSegment.from_file(
                 io.BytesIO(accumulated_chunks), format="webm"
@@ -107,12 +111,9 @@ class AudioTranscripter:
                     complete_audio_segment[start:end],
                     append_silence_length=self.split_append_silence,
                 )
-                # self.audio_queue.put_nowait(audio_segment)
                 self.push_stream.write(audio_segment.raw_data)
-                # read the bytesIO object
-                await asyncio.sleep(0.1)
 
-    async def stream_recognize_async(self, language="zh-CN"):
+    async def transcribe_async(self, language="zh-CN"):
         speech_config = speechsdk.SpeechConfig(
             subscription=os.environ.get("SPEECH_KEY"),
             region=os.environ.get("SPEECH_REGION"),
@@ -165,21 +166,37 @@ class AudioTranscripter:
         )
 
         # Start continuous recognition
-        self.speech_recognizer.start_continuous_recognition()
-        self.timeout = time.time() + 5
+        result_future = self.speech_recognizer.start_continuous_recognition_async()
+        # wait for voidfuture, so we know engine initialization is done.
+        result_future.get()
+        #  have a greater timeout value for the first transcription
+        self.timeout = time.time() + self.initial_timeout_diff
 
+        # loop serves as a mechanism to keep the program running while it's waiting for more audio chunks
+        # and transcriptions. The timeout value is updated in the recognizing_callback function,
+        #  This means that the loop will keep running until there's no new transcription received within the self.timeout_diff duration.
         while time.time() < self.timeout:
             await asyncio.sleep(0.1)
 
         print("done")
-        self.speech_recognizer.stop_continuous_recognition()
+        self.speech_recognizer.stop_continuous_recognition_async()
         self.push_stream.close()
 
     async def run(self):
         self.audio_queue = asyncio.Queue()
         self.chunks_queue = asyncio.Queue()
 
-        task1 = asyncio.create_task(self.stream_recognize_async())
+        task1 = asyncio.create_task(self.transcribe_async())
+        task2 = asyncio.create_task(self.chunks_handler())
+
+        await task1
+        await task2
+
+    async def run_dummy(self):
+        self.audio_queue = asyncio.Queue()
+        self.chunks_queue = asyncio.Queue()
+
+        task1 = asyncio.create_task(self.transcribe_async())
         task2 = asyncio.create_task(self.dummy_chunks_receiver("resources/chunks"))
         task3 = asyncio.create_task(self.chunks_handler())
 
@@ -190,5 +207,5 @@ class AudioTranscripter:
 
 if __name__ == "__main__":
     # async def main():
-    audio_transcripter = AudioTranscripter()
-    asyncio.run(audio_transcripter.run())
+    audio_transcripter = AudioTranscriber()
+    asyncio.run(audio_transcripter.run_dummy())
