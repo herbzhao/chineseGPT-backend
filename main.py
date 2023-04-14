@@ -7,6 +7,7 @@ from backend_functions import chat
 from audio_processing import transcribing_chunks_async
 from pydantic import BaseModel
 import uvicorn
+from azure_audio import AzureAudio
 
 load_dotenv()
 if os.path.exists(".env.local"):
@@ -125,6 +126,22 @@ def receive_metadata(audio_metadata: AudioMetaData):
     app.language = audio_metadata.language
     print(f"Changed the language to: {app.language}")
     return {"msg": "received metadata"}
+
+
+# https://www.starlette.io/websockets/
+@app.websocket("/chat/stream/azureTranscript")
+async def azure_transcript_stream(websocket: WebSocket):
+    await websocket.accept()
+    voice_chunks = []
+    transcribed_segment_length = 0
+    printed_transcripts_number = 0
+    transcripts = []
+    azure_audio = AzureAudio()
+    print("websocket connected")
+    while True:
+        voice_chunk = await websocket.receive_bytes()
+        voice_chunks.append(voice_chunk)
+        azure_audio.process_chunks(voice_chunks)
 
 
 # https://www.starlette.io/websockets/
