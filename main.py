@@ -11,17 +11,19 @@ from azure_audio import AudioTranscriber
 import asyncio
 
 load_dotenv()
-if os.path.exists(".env.local"):
-    load_dotenv(".env.local")
+
 if os.path.exists(".env.production") and os.getenv("ENVIRONMENT") == "production":
     print("GETTING PRODUCTION ENVIRONMENT VARIABLES")
     load_dotenv(".env.production")
+else:
+    if os.path.exists(".env.local"):
+        load_dotenv(".env.local")
 
 app = FastAPI()
 # set a default language on startup
 # cors: https://fastapi.tiangolo.com/tutorial/cors/
 frontend_url = os.getenv("FRONTEND_URL")
-origins = [frontend_url]
+origins = [frontend_url, "https://gpt.tiandqian.com"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
