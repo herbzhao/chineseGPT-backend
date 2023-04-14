@@ -10,6 +10,7 @@ from pathlib import Path
 import asyncio
 import io
 import threading
+from parameters import AUDIO_SEGMENT_SPLIT_LENGTH, AUDIO_TIMEOUT_LENGTH
 
 
 class AudioTranscriber:
@@ -31,12 +32,11 @@ class AudioTranscriber:
         # time stamp of consumed segment alrady sent to azure
         self.consumed_segment_length = 0
         self.wav_files = []
-        self.split_length = 2000
-        self.split_append_silence = self.split_length // 10
+        self.split_length = AUDIO_SEGMENT_SPLIT_LENGTH
+        self.split_append_silence = self.split_length // 50
         self.transcripts = []
-        self.processing_done = False
         # if no new transcript is received for x seconds, stop the stream
-        self.timeout_diff = 3
+        self.timeout_length = AUDIO_TIMEOUT_LENGTH
         self.initial_timeout_diff = 10
 
     def convert_audio_segment_to_wav(self, audio_segment, append_silence_length=0):
@@ -135,16 +135,16 @@ class AudioTranscriber:
                 self.transcripts.append(evt.result.text)
             else:
                 self.transcripts[-1] = evt.result.text
-            print(self.transcripts[-1])
-            self.timeout = time.time() + self.timeout_diff
+            # print(self.transcripts[-1])
+            self.timeout = time.time() + self.timeout_length
             # print("RECOGNIZING: {}".format(evt))
 
         def recognized_callback(evt: speechsdk.SpeechRecognitionEventArgs):
             """callback for recognized event"""
             self.transcripts[-1] = evt.result.text
             self.transcripts.append("")
-            print("recognized so far:")
-            print(self.transcripts)
+            # print("recognized so far:")
+            # print(self.transcripts)
             # # Check if this is the final result
             # print("RECOGNIZED: {}".format(evt))
 
@@ -175,18 +175,32 @@ class AudioTranscriber:
         # loop serves as a mechanism to keep the program running while it's waiting for more audio chunks
         # and transcriptions. The timeout value is updated in the recognizing_callback function,
         #  This means that the loop will keep running until there's no new transcription received within the self.timeout_diff duration.
-        while time.time() < self.timeout:
+        while not self.transcription_complete:
             await asyncio.sleep(0.1)
 
-        print("done")
-        self.speech_recognizer.stop_continuous_recognition_async()
-        self.push_stream.close()
+        await asyncio.sleep(0.2)
+        if self.transcription_complete:
+            self.speech_recognizer.stop_continuous_recognition_async()
+            self.push_stream.close()
 
-    async def run(self):
+    @property
+    def transcription_complete(self):
+        return time.time() > self.timeout
+
+    async def close(self):
+        if self.speech_recognizer:
+            await self.speech_recognizer.stop_continuous_recognition_async()
+            self.speech_recognizer = None
+        if self.push_stream:
+            self.push_stream.close()
+            self.push_stream = None
+        self.transcripts.clear()
+
+    async def run(self, language="zh-CN"):
         self.audio_queue = asyncio.Queue()
         self.chunks_queue = asyncio.Queue()
 
-        task1 = asyncio.create_task(self.transcribe_async())
+        task1 = asyncio.create_task(self.transcribe_async(language=language))
         task2 = asyncio.create_task(self.chunks_handler())
 
         await task1

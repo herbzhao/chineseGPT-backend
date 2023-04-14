@@ -36,7 +36,7 @@ app.add_middleware(
 # https://fastapi.tiangolo.com/advanced/events/
 @app.on_event("startup")
 async def startup_event():
-    app.language = "en"
+    app.language = "zh-CN"
     # perform additional initialization tasks here
 
 
@@ -128,7 +128,7 @@ class AudioMetaData(BaseModel):
 def receive_metadata(audio_metadata: AudioMetaData):
     app.language = audio_metadata.language
     print(f"Changed the language to: {app.language}")
-    return {"msg": "received metadata"}
+    return {"msg": f"language changed to {app.language}"}
 
 
 @app.websocket("/chat/stream/azureTranscript")
@@ -138,7 +138,7 @@ async def azure_transcript_stream(websocket: WebSocket):
     sent_transcripts = ""
     print("websocket connected")
     # prepare to process the chunks
-    asyncio.create_task(audio_transcriber.run())
+    asyncio.create_task(audio_transcriber.run(language=app.language))
     print("starting transcriber")
 
     # Start a background task to periodically check for new transcripts
@@ -147,7 +147,6 @@ async def azure_transcript_stream(websocket: WebSocket):
         while True:
             transcripts = " ".join(audio_transcriber.transcripts)
             if transcripts != sent_transcripts:
-                print(f"transcripts: {transcripts}")
                 await websocket.send_json({"transcripts": transcripts})
                 sent_transcripts = transcripts
             await asyncio.sleep(0.1)
@@ -159,53 +158,12 @@ async def azure_transcript_stream(websocket: WebSocket):
         # Call the add_chunk method with the received voice_chunk
         await audio_transcriber.add_chunk(voice_chunk)
 
-
-# https://www.starlette.io/websockets/
-@app.websocket("/chat/stream/audioTranscript")
-async def audio_stream(websocket: WebSocket):
-    await websocket.accept()
-    voice_chunks = []
-    transcribed_segment_length = 0
-    printed_transcripts_number = 0
-    transcripts = []
-    print("websocket connected")
-    while True:
-        voice_chunk = await websocket.receive_bytes()
-        voice_chunks.append(voice_chunk)
-        # save chunk to a local file
-        with open(f"resources/chunks/{len(voice_chunks)}.webm", "wb") as f:
-            f.write(voice_chunk)
-
-        # a function to handle gradually increasing chunks
-        (
-            transcripts,
-            transcribed_segment_length,
-            stop_transcribing,
-        ) = await transcribing_chunks_async(
-            voice_chunks,
-            transcribed_segment_length,
-            transcripts=transcripts,
-            language=app.language,
-        )
-        if not stop_transcribing:
-            # only print the latest transcript
-            for transcript in transcripts[printed_transcripts_number:]:
-                print(transcript)
-                await websocket.send_json({"transcript": transcript + " "})
-
-            printed_transcripts_number = len(transcripts)
-
-        else:
-            await websocket.send_json(
-                {"transcript": transcripts[-1], "command": "DONE"}
-            )
-            print(transcripts[-1])
-            print("disconnecting websocket...")
+        if audio_transcriber.transcription_complete:
+            await websocket.send_json({"command": "DONE"})
             # await websocket.close(code=1000, reason=None)
-            voice_chunks = []
-            transcribed_segment_length = 0
-            stop_transcribing = False
             break
+
+        await asyncio.sleep(0.1)
 
 
 if __name__ == "__main__":

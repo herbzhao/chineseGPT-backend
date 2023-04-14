@@ -8,4 +8,5 @@ temp/*
 !temp/.gitkeep 
 
 resources/*
+!resources/.gitkeep
 example/
