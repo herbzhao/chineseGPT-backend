@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import uvicorn
 from azure_audio import AudioTranscriber
 import asyncio
+import json
 
 load_dotenv()
 
@@ -117,6 +118,7 @@ async def chat_stream(websocket: WebSocket):
             if "content" in chunk_message:
                 await websocket.send_json({"content": chunk_message.content})
                 complete_response += chunk_message.content
+                await asyncio.sleep(0.01)
         # if need to synthesise the audio
         # if audio_synthesis:
         #     audio = synthesize_audio(complete_response)
@@ -146,8 +148,9 @@ async def azure_transcript_stream(websocket: WebSocket):
 
     async def reset_transcriber():
         nonlocal sent_transcripts
-        audio_transcriber.transcripts.clear()
         sent_transcripts = ""
+        # Restart the speech recognizer
+        await audio_transcriber.restart_speech_recognizer()
 
     # Start a background task to periodically check for new transcripts
     async def transcripts_handler():
@@ -159,27 +162,34 @@ async def azure_transcript_stream(websocket: WebSocket):
                 sent_transcripts = transcripts
             await asyncio.sleep(0.1)
 
-    print("start processing chunks")
-    asyncio.create_task(audio_transcriber.process_chunks())
-    print("starting transcripts handler")
-    asyncio.create_task(transcripts_handler())
-
-    while True:
-        try:
-            message = await websocket.receive()
-        except asyncio.TimeoutError:
-            continue
+    async def handle_message(message):
         if "bytes" in message.keys():
             voice_chunk = message["bytes"]
             # Call the add_chunk method with the received voice_chunk
             await audio_transcriber.add_chunk(voice_chunk)
-
             if audio_transcriber.transcription_complete:
                 await websocket.send_json({"command": "DONE"})
 
         elif "text" in message.keys():
-            if message["text"] == "RESET":
+            json_message = json.loads(message["text"])
+            if "command" in json_message and json_message["command"] == "RESET":
                 await reset_transcriber()
+            elif "language" in json_message:
+                audio_transcriber.language = json_message["language"]
+                print(f"Changed the language to: {audio_transcriber.language}")
+                await reset_transcriber()
+
+    print("start processing chunks")
+    asyncio.create_task(audio_transcriber.process_chunks())
+    print("starting transcripts handler")
+    asyncio.create_task(transcripts_handler())
+    while True:
+        try:
+            message = await websocket.receive()
+            await handle_message(message)
+        except asyncio.TimeoutError:
+            continue
+        await asyncio.sleep(0.1)
 
 
 if __name__ == "__main__":

@@ -37,8 +37,8 @@ class AudioTranscriber:
         self.transcripts = []
         # if no new transcript is received for x seconds, stop the stream
         self.timeout_length = AUDIO_TIMEOUT_LENGTH
-        self.initial_timeout_diff = 100
-        self.timeout = time.time() + self.initial_timeout_diff
+        self.initial_timeout_length = 3600
+        self.reset_timeout()
         self.chunks_queue = asyncio.Queue()
         self.language = "zh-CN"
 
@@ -47,6 +47,14 @@ class AudioTranscriber:
         self = cls()
         await self.start_transcriber()
         return self
+
+    async def restart_speech_recognizer(self):
+        await self.close_session()
+        # Start a new speech recognizer
+        await self.start_transcriber()
+
+    def reset_timeout(self):
+        self.timeout = time.time() + self.initial_timeout_length
 
     def convert_audio_segment_to_wav(self, audio_segment, append_silence_length=0):
         silence = AudioSegment.silent(duration=append_silence_length)
@@ -124,6 +132,8 @@ class AudioTranscriber:
                 )
                 self.push_stream.write(audio_segment.raw_data)
 
+            await asyncio.sleep(0.1)
+
     async def start_transcriber(self):
         speech_config = speechsdk.SpeechConfig(
             subscription=os.environ.get("SPEECH_KEY"),
@@ -159,20 +169,16 @@ class AudioTranscriber:
 
     async def transcribe_async(self):
         # Start continuous recognition
-        result_future = self.speech_recognizer.start_continuous_recognition_async()
-        # wait for voidfuture, so we know engine initialization is done.
-        result_future.get()
-        #  have a greater timeout value for the first transcription
+        self.speech_recognizer.start_continuous_recognition()
 
         # loop serves as a mechanism to keep the program running while it's waiting for more audio chunks
         # and transcriptions. The timeout value is updated in the recognizing_callback function,
         #  This means that the loop will keep running until there's no new transcription received within the self.timeout_diff duration.
         while not self.transcription_complete:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
 
-        await asyncio.sleep(0.2)
         if self.transcription_complete:
-            self.speech_recognizer.stop_continuous_recognition_async()
+            self.speech_recognizer.stop_continuous_recognition()
             self.push_stream.close()
 
     async def add_chunk(self, chunk):
@@ -181,6 +187,19 @@ class AudioTranscriber:
     @property
     def transcription_complete(self):
         return time.time() > self.timeout
+
+    async def close_session(self):
+        # force timeout to kick in
+        self.timeout = time.time() - self.timeout_length
+        # self.transcription_complete = True
+        if self.speech_recognizer:
+            self.speech_recognizer.stop_continuous_recognition()
+            self.speech_recognizer = None
+        if self.push_stream:
+            self.push_stream.close()
+            self.push_stream = None
+        self.transcripts.clear()
+        self.reset_timeout()
 
     def recognizing_callback(self, evt: speechsdk.SpeechRecognitionEventArgs):
         if len(self.transcripts) == 0:
@@ -196,38 +215,8 @@ class AudioTranscriber:
     async def stop_callback(self, evt: speechsdk.SessionEventArgs):
         """callback that signals to stop continuous recognition upon receiving an event `evt`"""
         print("CLOSING on {}".format(evt))
-        await self.speech_recognizer.stop_continuous_recognition_async()
+        await self.speech_recognizer.stop_continuous_recognition()
         self.push_stream.close()
-
-    async def close(self):
-        if self.speech_recognizer:
-            await self.speech_recognizer.stop_continuous_recognition_async()
-            self.speech_recognizer = None
-        if self.push_stream:
-            self.push_stream.close()
-            self.push_stream = None
-        self.transcripts.clear()
-
-    async def run(self, language="zh-CN"):
-        self.chunks_queue = asyncio.Queue()
-
-        task1 = asyncio.create_task(self.transcribe_async(language=language))
-        task2 = asyncio.create_task(self.chunks_handler())
-
-        await task1
-        await task2
-
-    async def run_dummy(self):
-        self.audio_queue = asyncio.Queue()
-        self.chunks_queue = asyncio.Queue()
-
-        task1 = asyncio.create_task(self.transcribe_async())
-        task2 = asyncio.create_task(self.dummy_chunks_receiver("resources/chunks"))
-        task3 = asyncio.create_task(self.chunks_handler())
-
-        await task1
-        await task2
-        await task3
 
 
 class AudioSynthesiser:
