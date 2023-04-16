@@ -93,14 +93,14 @@ def send_response(prompt_request: PromptRequest) -> None:
 @app.websocket("/chat/stream")
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
+    complete_response = ""
     while True:
         prompt_request = await websocket.receive_json()
         prompt_request = PromptRequest(**prompt_request)
         prompt = prompt_request.prompt
         history = prompt_request.history
-        print(f"Received prompt: {prompt}")
-        print(f"Received history: {history}")
-        print("in streaming mode")
+        # print(f"Received prompt: {prompt}")
+        # print(f"Received history: {history}")
         # get generator data to client
         response_generator = chat(
             prompt=prompt,
@@ -111,11 +111,16 @@ async def chat_stream(websocket: WebSocket):
             stream=True,
             session_id="test_api",
         )
-        print("got response generator")
+        # print("got response generator")
         for response_chunk in response_generator:
             chunk_message = response_chunk["choices"][0]["delta"]
             if "content" in chunk_message:
                 await websocket.send_json({"content": chunk_message.content})
+                complete_response += chunk_message.content
+        # if need to synthesise the audio
+        # if audio_synthesis:
+        #     audio = synthesize_audio(complete_response)
+        #     await websocket.send_bytes(audio)
         await websocket.send_json({"content": "DONE"})
 
 
@@ -134,12 +139,15 @@ def receive_metadata(audio_metadata: AudioMetaData):
 @app.websocket("/chat/stream/azureTranscript")
 async def azure_transcript_stream(websocket: WebSocket):
     await websocket.accept()
-    audio_transcriber = AudioTranscriber()
+    audio_transcriber = await AudioTranscriber.create()
+
     sent_transcripts = ""
     print("websocket connected")
-    # prepare to process the chunks
-    asyncio.create_task(audio_transcriber.run(language=app.language))
-    print("starting transcriber")
+
+    async def reset_transcriber():
+        nonlocal sent_transcripts
+        audio_transcriber.transcripts.clear()
+        sent_transcripts = ""
 
     # Start a background task to periodically check for new transcripts
     async def transcripts_handler():
@@ -151,19 +159,27 @@ async def azure_transcript_stream(websocket: WebSocket):
                 sent_transcripts = transcripts
             await asyncio.sleep(0.1)
 
+    print("start processing chunks")
+    asyncio.create_task(audio_transcriber.process_chunks())
     print("starting transcripts handler")
     asyncio.create_task(transcripts_handler())
+
     while True:
-        voice_chunk = await websocket.receive_bytes()
-        # Call the add_chunk method with the received voice_chunk
-        await audio_transcriber.add_chunk(voice_chunk)
+        try:
+            message = await websocket.receive()
+        except asyncio.TimeoutError:
+            continue
+        if "bytes" in message.keys():
+            voice_chunk = message["bytes"]
+            # Call the add_chunk method with the received voice_chunk
+            await audio_transcriber.add_chunk(voice_chunk)
 
-        if audio_transcriber.transcription_complete:
-            await websocket.send_json({"command": "DONE"})
-            # await websocket.close(code=1000, reason=None)
-            break
+            if audio_transcriber.transcription_complete:
+                await websocket.send_json({"command": "DONE"})
 
-        await asyncio.sleep(0.1)
+        elif "text" in message.keys():
+            if message["text"] == "RESET":
+                await reset_transcriber()
 
 
 if __name__ == "__main__":
