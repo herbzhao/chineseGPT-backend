@@ -7,7 +7,7 @@ from backend_functions import chat
 from audio_processing import transcribing_chunks_async
 from pydantic import BaseModel
 import uvicorn
-from azure_audio import AudioTranscriber
+from azure_audio import AudioTranscriber, AudioSynthesiser
 import asyncio
 import json
 
@@ -95,6 +95,7 @@ def send_response(prompt_request: PromptRequest) -> None:
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
     complete_response = ""
+    synthesise_answer = False
     while True:
         prompt_request = await websocket.receive_json()
         prompt_request = PromptRequest(**prompt_request)
@@ -119,27 +120,16 @@ async def chat_stream(websocket: WebSocket):
                 await websocket.send_json({"content": chunk_message.content})
                 complete_response += chunk_message.content
                 await asyncio.sleep(0.01)
-        # if need to synthesise the audio
-        # if audio_synthesis:
-        #     audio = synthesize_audio(complete_response)
-        #     await websocket.send_bytes(audio)
+        if synthesise_answer:
+            audio_synthesiser = AudioSynthesiser()
+            audio_synthesiser.synthesis_to_mp3(complete_response)
+
         await websocket.send_json({"content": "DONE"})
-
-
-class AudioMetaData(BaseModel):
-    language: str
-
-
-# an endpoint to receive metadata from the client
-@app.post("/chat/stream/audioMetadata")
-def receive_metadata(audio_metadata: AudioMetaData):
-    app.language = audio_metadata.language
-    print(f"Changed the language to: {app.language}")
-    return {"msg": f"language changed to {app.language}"}
 
 
 @app.websocket("/chat/stream/azureTranscript")
 async def azure_transcript_stream(websocket: WebSocket):
+    start_time = time.time()
     await websocket.accept()
     audio_transcriber = await AudioTranscriber.create()
 
@@ -160,6 +150,7 @@ async def azure_transcript_stream(websocket: WebSocket):
             if transcripts != sent_transcripts:
                 await websocket.send_json({"transcripts": transcripts})
                 sent_transcripts = transcripts
+                print(f"{time.time() - start_time}: sent {sent_transcripts}")
             await asyncio.sleep(0.1)
 
     async def handle_message(message):
@@ -167,6 +158,7 @@ async def azure_transcript_stream(websocket: WebSocket):
             voice_chunk = message["bytes"]
             # Call the add_chunk method with the received voice_chunk
             await audio_transcriber.add_chunk(voice_chunk)
+            print(f"{time.time() - start_time}: added chunk")
             if audio_transcriber.transcription_complete:
                 await websocket.send_json({"command": "DONE"})
 

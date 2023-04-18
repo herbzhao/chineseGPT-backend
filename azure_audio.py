@@ -33,8 +33,9 @@ class AudioTranscriber:
         self.consumed_segment_length = 0
         self.wav_files = []
         self.split_length = AUDIO_SEGMENT_SPLIT_LENGTH
-        self.split_append_silence = self.split_length // 50
+        self.split_append_silence = 0
         self.transcripts = []
+        self.first_chunk = None
         # if no new transcript is received for x seconds, stop the stream
         self.timeout_length = AUDIO_TIMEOUT_LENGTH
         self.initial_timeout_length = 3600
@@ -105,9 +106,29 @@ class AudioTranscriber:
                 await self.chunks_queue.put(chunk)
 
                 # mimic receiving chunks every x seconds
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.01)
 
     async def process_chunks(self):
+        while True:
+            chunk = await self.chunks_queue.get()
+            if self.first_chunk is None:
+                self.first_chunk = chunk
+                first_audio_segment = AudioSegment.from_file(
+                    io.BytesIO(self.first_chunk), format="webm"
+                )
+            # append the first chunk to the new chunk for necessary headings
+            new_audio_segment = AudioSegment.from_file(
+                io.BytesIO(b"".join([self.first_chunk, chunk])), format="webm"
+            )
+            # remove the length of first chunk from the new audio segment
+            new_audio_segment_wav = self.convert_audio_segment_to_wav(
+                new_audio_segment[len(first_audio_segment) :]
+            )
+            self.push_stream.write(new_audio_segment_wav.raw_data)
+
+            await asyncio.sleep(0.1)
+
+    async def process_chunks_old(self):
         accumulated_chunks = b""
         while True:
             # get a chunk from the queue
@@ -156,7 +177,7 @@ class AudioTranscriber:
             lambda evt: self.recognized_callback(evt)
         )
         self.speech_recognizer.session_started.connect(
-            lambda evt: print("SESSION STARTED: {}".format(evt))
+            lambda evt: print(f"SESSION STARTED: {evt} {time.time()}")
         )
         self.speech_recognizer.session_stopped.connect(
             lambda evt: print("CLOSING on {}".format(evt))
@@ -207,6 +228,7 @@ class AudioTranscriber:
         else:
             self.transcripts[-1] = evt.result.text
         self.timeout = time.time() + self.timeout_length
+        print(f"RECOGNIZING: {evt.result.text} at {time.time()}")
 
     def recognized_callback(self, evt: speechsdk.SpeechRecognitionEventArgs):
         self.transcripts[-1] = evt.result.text
@@ -235,7 +257,7 @@ class AudioSynthesiser:
         # self.delimiters = "[！？。 . \n]"
         self.delimiters = "[\n]"
 
-    def speech_synthesis_to_mp3_file(
+    def synthesis_to_mp3(
         self, input_text, output_folder=Path("resources") / "synthesized"
     ):
         """performs speech synthesis to a mp3 file"""
@@ -254,37 +276,38 @@ class AudioSynthesiser:
         language = "zh-CN"
         speech_config.speech_synthesis_language = language
         # female voice
-        voice = "zh-CN-XiaochenNeural"
-        speech_config.speech_synthesis_voice_name = voice
+        # voice = "zh-CN-XiaochenNeural"
+        # speech_config.speech_synthesis_voice_name = voice
 
         # Receives a text from console input and synthesizes it to mp3 file.
         #  split text by comma and full stop to allow mp3 be sent earlier
-        for i, text in enumerate(re.split(self.delimiters, input_text)):
-            output_name = output_folder / f"{i}_{text}.mp3"
-            file_config = speechsdk.audio.AudioOutputConfig(filename=str(output_name))
-            self.speech_synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=speech_config, audio_config=file_config
-            )
+        #  save to io.BytesIO
+        output_file = io.BytesIO()
+        output_file.filename = "resources/output.mp3"
 
-            result = self.speech_synthesizer.speak_text_async(text).get()
-            # Check result
-            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-                print(
-                    "Speech synthesized for text [{}], and the audio was saved to [{}]".format(
-                        text, output_name
-                    )
-                )
-            elif result.reason == speechsdk.ResultReason.Canceled:
-                cancellation_details = result.cancellation_details
-                print(
-                    "Speech synthesis canceled: {}".format(cancellation_details.reason)
-                )
-                if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                    print(
-                        "Error details: {}".format(cancellation_details.error_details)
-                    )
+        output_name = output_folder / f"{input_text[:10]}.mp3"
+        file_config = speechsdk.audio.AudioOutputConfig(filename=output_file.filename)
+        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
+            speech_config=speech_config, audio_config=file_config
+        )
 
-    def speech_synthesis_to_speaker(self) -> None:
+        result = self.speech_synthesizer.speak_text_async(input_text).get()
+        # Check result
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            print(f"Speech synthesized and the audio was saved to [{output_name}]")
+            # save bytesio to file
+            with open(output_name, "wb") as f:
+                f.write(output_file.getvalue())
+
+        elif result.reason == speechsdk.ResultReason.Canceled:
+            cancellation_details = result.cancellation_details
+            print("Speech synthesis canceled: {}".format(cancellation_details.reason))
+            if cancellation_details.reason == speechsdk.CancellationReason.Error:
+                print("Error details: {}".format(cancellation_details.error_details))
+
+        return output_name
+
+    def speech_synthesis_to_speaker(self, input_text) -> None:
         """performs speech synthesis to the default speaker"""
         # Creates an instance of a speech config with specified subscription key and service region.
         speech_config = speechsdk.SpeechConfig(
@@ -307,35 +330,28 @@ class AudioSynthesiser:
 
         speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config)
 
-        # Receives a text from console input and synthesizes it to speaker.
-        while True:
-            print("Enter some text that you want to speak, Ctrl-Z to exit")
-            try:
-                text = input()
-            except EOFError:
-                break
-            result = speech_synthesizer.speak_text_async(text).get()
-            # Check result
-            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-                print("Speech synthesized to speaker for text [{}]".format(text))
-            elif result.reason == speechsdk.ResultReason.Canceled:
-                cancellation_details = result.cancellation_details
-                print(
-                    "Speech synthesis canceled: {}".format(cancellation_details.reason)
-                )
-                if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                    print(
-                        "Error details: {}".format(cancellation_details.error_details)
-                    )
+        result = speech_synthesizer.speak_text_async(input_text).get()
 
 
 if __name__ == "__main__":
-    # async def main():
-    # audio_transcripter = AudioTranscriber()
-    # asyncio.run(audio_transcripter.run_dummy())
 
-    audio_synthesiser = AudioSynthesiser()
-    # audio_synthesiser.speech_synthesis_to_speaker()
-    audio_synthesiser.speech_synthesis_to_mp3_file(
-        "如果您的整个牙齿都呈现黄色，建议您咨询一位牙医，以了解如何最好地改善牙齿颜色。牙医可能会建议您接受美白治疗或其他牙齿美容程序。在此之前，您可以尝试使用含氢氧化物的漱口水和牙膏，以帮助减轻牙齿的黄色。此外，定期刷牙和使用牙线也是保持口腔卫生的重要步骤。"
-    )
+    async def run_dummy():
+        print(f"starting at {time.time()}")
+        sent_transcripts = ""
+        audio_transcriber = await AudioTranscriber.create()
+        asyncio.create_task(audio_transcriber.dummy_chunks_receiver("resources/chunks"))
+        asyncio.create_task(audio_transcriber.process_chunks())
+        while True:
+            await asyncio.sleep(0.01)
+            transcripts = " ".join(audio_transcriber.transcripts)
+            if transcripts != sent_transcripts:
+                sent_transcripts = transcripts
+
+    asyncio.run(run_dummy())
+
+    # audio_synthesiser = AudioSynthesiser()
+    # # audio_synthesiser.speech_synthesis_to_speaker()
+    # # audio_synthesiser.synthesis_to_mp3(
+    # #     "首先，您可以尝试与女朋友坦诚地沟通，询问她为什么认为您烦人，并听取她的想法和意见。然后，您可以考虑改变一些自己的行为习惯，例如减少对她的干扰或给她更多的空间和自由。此外，您可以尝试找到一些共同的兴趣爱好，以便在一起度过更愉快的时光。最重要的是，要保持耐心和理解，并尽力让女朋友感受到您的爱和关心。"
+    # # )
+    # audio_synthesiser.speech_synthesis_to_speaker(input_text="我在测试麦克风延迟")
