@@ -29,6 +29,8 @@ class AudioSynthesiser:
         # self.delimiters = "[。！？，。,  . \n]"
         # self.delimiters = "[！？。 . \n]"
         self.delimiters = "[\n]"
+        self.text_queue = asyncio.Queue()
+
 
     def synthesis_to_mp3(
         self, input_text, output_folder=Path("resources") / "synthesized"
