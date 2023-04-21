@@ -70,27 +70,6 @@ class AudioTranscriber:
             audio_segment = AudioSegment.from_file(wav_file, format="wav")
         return audio_segment
 
-    def calculate_split_lengths(self, complete_audio_segment):
-        # divide any unconsumed audio segment into 1 second chunks
-        dividers = list(
-            range(
-                self.consumed_segment_length,
-                len(complete_audio_segment),
-                self.split_length,
-            )
-        )
-        split_lengths = [
-            [dividers[i], dividers[i + 1]]
-            for i, _ in enumerate(dividers)
-            if i < len(dividers) - 1
-        ]
-        if len(split_lengths) > 0:
-            # If all the chunks are used up, add the last chunk
-            split_lengths[-1][1] = len(complete_audio_segment)
-            self.consumed_segment_length = split_lengths[-1][1]
-
-        return split_lengths
-
     async def dummy_chunks_receiver(self, folder_name):
         filenames = [
             filename for filename in Path(folder_name).iterdir() if filename.is_file()
@@ -108,50 +87,22 @@ class AudioTranscriber:
                 # mimic receiving chunks every x seconds
                 await asyncio.sleep(0.01)
 
-    async def process_chunks(self):
+    async def process_chunks_mp3(self):
         while True:
             chunk = await self.chunks_queue.get()
-            if self.first_chunk is None:
-                self.first_chunk = chunk
-                first_audio_segment = AudioSegment.from_file(
-                    io.BytesIO(self.first_chunk), format="webm"
-                )
             # append the first chunk to the new chunk for necessary headings
-            new_audio_segment = AudioSegment.from_file(
-                io.BytesIO(b"".join([self.first_chunk, chunk])), format="webm"
-            )
+            audio_segment = AudioSegment.from_file(io.BytesIO(chunk), format="mp3")
             # remove the length of first chunk from the new audio segment
-            new_audio_segment_wav = self.convert_audio_segment_to_wav(
-                new_audio_segment[len(first_audio_segment) :]
-            )
-            self.push_stream.write(new_audio_segment_wav.raw_data)
+            audio_segment_wav = self.convert_audio_segment_to_wav(audio_segment)
+            self.push_stream.write(audio_segment_wav.raw_data)
 
             await asyncio.sleep(0.1)
 
-    async def process_chunks_old(self):
-        accumulated_chunks = b""
+    async def process_chunks_wav(self):
         while True:
-            # get a chunk from the queue
             chunk = await self.chunks_queue.get()
-            # store all the chunks received so far
-            accumulated_chunks += chunk
-            # convert chunks to audio segment
-            try:
-                complete_audio_segment = AudioSegment.from_file(
-                    io.BytesIO(accumulated_chunks), format="webm"
-                )
-            except:
-                print("Error converting audio segment")
-                continue
 
-            split_lengths = self.calculate_split_lengths(complete_audio_segment)
-            # send the split audio segments to azure
-            for j, (start, end) in enumerate(split_lengths):
-                audio_segment = self.convert_audio_segment_to_wav(
-                    complete_audio_segment[start:end],
-                    append_silence_length=self.split_append_silence,
-                )
-                self.push_stream.write(audio_segment.raw_data)
+            self.push_stream.write(chunk)
 
             await asyncio.sleep(0.1)
 
@@ -241,98 +192,6 @@ class AudioTranscriber:
         self.push_stream.close()
 
 
-class AudioSynthesiser:
-    def __init__(self):
-        load_dotenv()
-        if os.path.exists(".env.local"):
-            load_dotenv(".env.local")
-        if (
-            os.path.exists(".env.production")
-            and os.getenv("ENVIRONMENT") == "production"
-        ):
-            print("GETTING PRODUCTION ENVIRONMENT VARIABLES")
-            load_dotenv(".env.production")
-
-        # self.delimiters = "[。！？，。,  . \n]"
-        # self.delimiters = "[！？。 . \n]"
-        self.delimiters = "[\n]"
-
-    def synthesis_to_mp3(
-        self, input_text, output_folder=Path("resources") / "synthesized"
-    ):
-        """performs speech synthesis to a mp3 file"""
-        # Creates an instance of a speech config with specified subscription key and service region.
-        speech_config = speechsdk.SpeechConfig(
-            subscription=os.environ.get("SPEECH_KEY"),
-            region=os.environ.get("SPEECH_REGION"),
-        )
-        # Sets the synthesis output format.
-        # The full list of supported format can be found here:
-        # https://docs.microsoft.com/azure/cognitive-services/speech-service/rest-text-to-speech#audio-outputs
-        speech_config.set_speech_synthesis_output_format(
-            speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
-        )
-
-        language = "zh-CN"
-        speech_config.speech_synthesis_language = language
-        # female voice
-        # voice = "zh-CN-XiaochenNeural"
-        # speech_config.speech_synthesis_voice_name = voice
-
-        # Receives a text from console input and synthesizes it to mp3 file.
-        #  split text by comma and full stop to allow mp3 be sent earlier
-        #  save to io.BytesIO
-        output_file = io.BytesIO()
-        output_file.filename = "resources/output.mp3"
-
-        output_name = output_folder / f"{input_text[:10]}.mp3"
-        file_config = speechsdk.audio.AudioOutputConfig(filename=output_file.filename)
-        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
-            speech_config=speech_config, audio_config=file_config
-        )
-
-        result = self.speech_synthesizer.speak_text_async(input_text).get()
-        # Check result
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            print(f"Speech synthesized and the audio was saved to [{output_name}]")
-            # save bytesio to file
-            with open(output_name, "wb") as f:
-                f.write(output_file.getvalue())
-
-        elif result.reason == speechsdk.ResultReason.Canceled:
-            cancellation_details = result.cancellation_details
-            print("Speech synthesis canceled: {}".format(cancellation_details.reason))
-            if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                print("Error details: {}".format(cancellation_details.error_details))
-
-        return output_name
-
-    def speech_synthesis_to_speaker(self, input_text) -> None:
-        """performs speech synthesis to the default speaker"""
-        # Creates an instance of a speech config with specified subscription key and service region.
-        speech_config = speechsdk.SpeechConfig(
-            subscription=os.environ.get("SPEECH_KEY"),
-            region=os.environ.get("SPEECH_REGION"),
-        )
-        # Creates a speech synthesizer using the default speaker as audio output.
-        # The full list of supported languages can be found here:
-        # https://docs.microsoft.com/azure/cognitive-services/speech-service/language-support#text-to-speech
-        # https://aka.ms/csspeech/voicenames
-        language = "zh-CN"
-        speech_config.speech_synthesis_language = language
-        # female voice
-        voice = "zh-CN-XiaochenNeural"
-        # voice = "zh-CN-XiaoxiaoNeural"
-        # male voice
-        # voice = "zh-CN-YunxiaNeural"
-
-        speech_config.speech_synthesis_voice_name = voice
-
-        speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config)
-
-        result = speech_synthesizer.speak_text_async(input_text).get()
-
-
 if __name__ == "__main__":
 
     async def run_dummy():
@@ -348,10 +207,3 @@ if __name__ == "__main__":
                 sent_transcripts = transcripts
 
     asyncio.run(run_dummy())
-
-    # audio_synthesiser = AudioSynthesiser()
-    # # audio_synthesiser.speech_synthesis_to_speaker()
-    # # audio_synthesiser.synthesis_to_mp3(
-    # #     "首先，您可以尝试与女朋友坦诚地沟通，询问她为什么认为您烦人，并听取她的想法和意见。然后，您可以考虑改变一些自己的行为习惯，例如减少对她的干扰或给她更多的空间和自由。此外，您可以尝试找到一些共同的兴趣爱好，以便在一起度过更愉快的时光。最重要的是，要保持耐心和理解，并尽力让女朋友感受到您的爱和关心。"
-    # # )
-    # audio_synthesiser.speech_synthesis_to_speaker(input_text="我在测试麦克风延迟")

@@ -7,7 +7,8 @@ from backend_functions import chat
 from audio_processing import transcribing_chunks_async
 from pydantic import BaseModel
 import uvicorn
-from azure_audio import AudioTranscriber, AudioSynthesiser
+from azure_transcriber import AudioTranscriber
+from azure_synthesiser import AudioSynthesiser
 import asyncio
 import json
 
@@ -96,6 +97,8 @@ async def chat_stream(websocket: WebSocket):
     await websocket.accept()
     complete_response = ""
     synthesise_answer = False
+    if synthesise_answer:
+        audio_synthesiser = AudioSynthesiser()
     while True:
         prompt_request = await websocket.receive_json()
         prompt_request = PromptRequest(**prompt_request)
@@ -119,10 +122,12 @@ async def chat_stream(websocket: WebSocket):
             if "content" in chunk_message:
                 await websocket.send_json({"content": chunk_message.content})
                 complete_response += chunk_message.content
+                if synthesise_answer:
+                    synthesised_file = audio_synthesiser.synthesis_to_mp3(
+                        complete_response
+                    )
+                    websocket.send_bytes(audio_synthesiser.mp3_chunks)
                 await asyncio.sleep(0.01)
-        if synthesise_answer:
-            audio_synthesiser = AudioSynthesiser()
-            audio_synthesiser.synthesis_to_mp3(complete_response)
 
         await websocket.send_json({"content": "DONE"})
 
@@ -172,7 +177,8 @@ async def azure_transcript_stream(websocket: WebSocket):
                 await reset_transcriber()
 
     print("start processing chunks")
-    asyncio.create_task(audio_transcriber.process_chunks())
+    # change this depending on whether encoding is mp3 or wav
+    asyncio.create_task(audio_transcriber.process_chunks_mp3())
     print("starting transcripts handler")
     asyncio.create_task(transcripts_handler())
     while True:

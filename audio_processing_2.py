@@ -60,7 +60,7 @@ def push_stream_writer(stream):
 
 
 # check azure lowest latency for speech to text
-def push_stream_writer_mine(stream):
+def push_stream_writer(stream):
     chunks = []
     folder = "resources/chunks"
     for file in os.listdir(folder):
