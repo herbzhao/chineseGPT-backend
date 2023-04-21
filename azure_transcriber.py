@@ -90,12 +90,14 @@ class AudioTranscriber:
     async def process_chunks_mp3(self):
         while True:
             chunk = await self.chunks_queue.get()
-            # append the first chunk to the new chunk for necessary headings
-            audio_segment = AudioSegment.from_file(io.BytesIO(chunk), format="mp3")
-            # remove the length of first chunk from the new audio segment
-            audio_segment_wav = self.convert_audio_segment_to_wav(audio_segment)
-            self.push_stream.write(audio_segment_wav.raw_data)
-
+            try:
+                # append the first chunk to the new chunk for necessary headings
+                audio_segment = AudioSegment.from_file(io.BytesIO(chunk), format="mp3")
+                # remove the length of first chunk from the new audio segment
+                audio_segment_wav = self.convert_audio_segment_to_wav(audio_segment)
+                self.push_stream.write(audio_segment_wav.raw_data)
+            except Exception as e:
+                print(e)
             await asyncio.sleep(0.1)
 
     async def process_chunks_wav(self):
