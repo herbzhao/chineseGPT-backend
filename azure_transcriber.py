@@ -92,7 +92,7 @@ class AudioTranscriber:
             chunk = await self.chunks_queue.get()
             try:
                 # append the first chunk to the new chunk for necessary headings
-                audio_segment = AudioSegment.from_file(io.BytesIO(chunk), format="mp3")
+                audio_segment = AudioSegment.from_mp3(io.BytesIO(chunk))
                 # remove the length of first chunk from the new audio segment
                 audio_segment_wav = self.convert_audio_segment_to_wav(audio_segment)
                 self.push_stream.write(audio_segment_wav.raw_data)
