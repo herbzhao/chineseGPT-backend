@@ -178,7 +178,7 @@ async def azure_transcript_stream(websocket: WebSocket):
 
     print("start processing chunks")
     # change this depending on whether encoding is mp3 or wav
-    asyncio.create_task(audio_transcriber.process_chunks_mp3())
+    asyncio.create_task(audio_transcriber.process_chunks_wav())
     print("starting transcripts handler")
     asyncio.create_task(transcripts_handler())
     while True:

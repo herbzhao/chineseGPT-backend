@@ -31,82 +31,6 @@ class AudioSynthesiser:
         self.delimiters = "[\n]"
         self.text_queue = asyncio.Queue()
 
-
-    def synthesis_to_mp3(
-        self, input_text, output_folder=Path("resources") / "synthesized"
-    ):
-        """performs speech synthesis to a mp3 file"""
-        # Creates an instance of a speech config with specified subscription key and service region.
-        speech_config = speechsdk.SpeechConfig(
-            subscription=os.environ.get("SPEECH_KEY"),
-            region=os.environ.get("SPEECH_REGION"),
-        )
-        # Sets the synthesis output format.
-        # The full list of supported format can be found here:
-        # https://docs.microsoft.com/azure/cognitive-services/speech-service/rest-text-to-speech#audio-outputs
-        speech_config.set_speech_synthesis_output_format(
-            speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
-        )
-
-        language = "zh-CN"
-        speech_config.speech_synthesis_language = language
-        # female voice
-        # voice = "zh-CN-XiaochenNeural"
-        # speech_config.speech_synthesis_voice_name = voice
-
-        # Receives a text from console input and synthesizes it to mp3 file.
-        #  split text by comma and full stop to allow mp3 be sent earlier
-        #  save to io.BytesIO
-        output_file = io.BytesIO()
-        output_file.filename = "resources/output.mp3"
-
-        output_name = output_folder / f"{input_text[:10]}.mp3"
-        file_config = speechsdk.audio.AudioOutputConfig(filename=output_file.filename)
-        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
-            speech_config=speech_config, audio_config=file_config
-        )
-
-        result = self.speech_synthesizer.speak_text_async(input_text).get()
-        # Check result
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            print(f"Speech synthesized and the audio was saved to [{output_name}]")
-            # save bytesio to file
-            with open(output_name, "wb") as f:
-                f.write(output_file.getvalue())
-
-        elif result.reason == speechsdk.ResultReason.Canceled:
-            cancellation_details = result.cancellation_details
-            print("Speech synthesis canceled: {}".format(cancellation_details.reason))
-            if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                print("Error details: {}".format(cancellation_details.error_details))
-
-        return output_name
-
-    def speech_synthesis_to_speaker(self, input_text) -> None:
-        """performs speech synthesis to the default speaker"""
-        # Creates an instance of a speech config with specified subscription key and service region.
-        speech_config = speechsdk.SpeechConfig(
-            subscription=os.environ.get("SPEECH_KEY"),
-            region=os.environ.get("SPEECH_REGION"),
-        )
-        # Creates a speech synthesizer using the default speaker as audio output.
-        # The full list of supported languages can be found here:
-        # https://docs.microsoft.com/azure/cognitive-services/speech-service/language-support#text-to-speech
-        # https://aka.ms/csspeech/voicenames
-        language = "zh-CN"
-        speech_config.speech_synthesis_language = language
-        # female voice
-        voice = "zh-CN-XiaochenNeural"
-        # voice = "zh-CN-XiaoxiaoNeural"
-        # male voice
-        # voice = "zh-CN-YunxiaNeural"
-
-        speech_config.speech_synthesis_voice_name = voice
-
-        speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config)
-
-        result = speech_synthesizer.speak_text_async(input_text).get()
-
     def speech_synthesis_to_push_audio_output_stream(self):
         """performs speech synthesis and push audio output to a stream"""
 
@@ -183,38 +107,46 @@ class AudioSynthesiser:
         self.push_stream = speechsdk.audio.PushAudioOutputStream(self.stream_callback)
         # Creates a speech synthesizer using push stream as audio output.
         stream_config = speechsdk.audio.AudioOutputConfig(stream=self.push_stream)
-        speech_synthesizer = speechsdk.SpeechSynthesizer(
+        self.speech_synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config, audio_config=stream_config
         )
 
-        # Receives a text from console input and synthesizes it to stream output.
-        text = "你好，世界。"
-        result = speech_synthesizer.speak_text_async(text).get()
-        # Check result
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            print(
-                "Speech synthesized for text [{}], and the audio was written to output stream.".format(
-                    text
-                )
-            )
-        elif result.reason == speechsdk.ResultReason.Canceled:
-            cancellation_details = result.cancellation_details
-            print("Speech synthesis canceled: {}".format(cancellation_details.reason))
-            if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                print("Error details: {}".format(cancellation_details.error_details))
-        # Destroys result which is necessary for destroying speech synthesizer
-        del result
+        # # Destroys result which is necessary for destroying speech synthesizer
+        # del result
+        # # Destroys the synthesizer in order to close the output stream.
+        # del self.speech_synthesizer
 
-        # Destroys the synthesizer in order to close the output stream.
-        del speech_synthesizer
+    # add prompt to the queue
+    async def add_text(self, chunk):
+        await self.text_queue.put(chunk)
 
-        print(
-            "Totally {} bytes received.".format(self.stream_callback.get_audio_size())
-        )
+    # digest the text in the queue
+    async def process_text(self):
+        while True:
+            text = await self.text_queue.get()
+            result = self.speech_synthesizer.speak_text_async(text).get()
+            await asyncio.sleep(0.1)
+
+    async def dummy_text_receiver(self):
+        texts = ["今天的天气怎么样?", "明天我需要准备什么?", "请提醒我下午两点开会。"]
+        for text in texts:
+            await self.add_text(text)
+            # mimic receiving chunks every x seconds
+            await asyncio.sleep(0.1)
 
 
 if __name__ == "__main__":
     audio_synthesiser = AudioSynthesiser()
 
-    audio_synthesiser.speech_synthesis_to_push_audio_output_stream()
-    audio_synthesiser.stream_callback.save_to_file()
+    async def run_dummy():
+        print(f"starting at {time.time()}")
+        audio_synthesiser = AudioSynthesiser()
+        audio_synthesiser.speech_synthesis_to_push_audio_output_stream()
+
+        asyncio.create_task(audio_synthesiser.dummy_text_receiver())
+        asyncio.create_task(audio_synthesiser.process_text())
+
+        await asyncio.sleep(5)
+        audio_synthesiser.stream_callback.save_to_file()
+
+    asyncio.run(run_dummy())

@@ -9,7 +9,7 @@ COPY ./ /code/
 
 # 
 # install dependencies
-RUN apt-get update && apt-get install -y ffmpeg libavcodec-extra libssl-dev libasound2
+RUN apt-get update && apt-get install -y ffmpeg libavcodec-extra
 
 # use pipenv to install dependencies
 RUN pip3 install pipenv
