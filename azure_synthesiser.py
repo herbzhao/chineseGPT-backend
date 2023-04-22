@@ -78,15 +78,6 @@ class AudioSynthesiser:
 
             def save_to_file(self) -> None:
                 audio_data = self.get_audio_data()
-                # split the audio_data into three parts
-                # and save them to three different files
-                # split_points = [
-                #     len(audio_data) // 3,
-                #     len(audio_data) * 2 // 3,
-                #     len(audio_data),
-                # ]
-                # for i, pt in enumerate(split_points):
-                # segment = audio_data[:pt]
                 filename = f"output/synthesized/audio_{time.time()}.mp3"
                 with open(filename, "ab") as f:
                     f.write(audio_data)
@@ -132,44 +123,51 @@ class AudioSynthesiser:
     # digest the text in the queue
     async def process_text(self) -> None:
         """Process the text in the text queue."""
-        while True:
-            text = await self.text_queue.get()
-            self.result = self.speech_synthesizer.speak_text_async(text).get()
-            await asyncio.sleep(0.1)
-
-    async def dummy_text_receiver(self):
-        """Dummy text receiver to mimic receiving chunks of text."""
-        texts = "“布姐”是指《JOJO的奇妙冒险》中的角色布鲁诺·布加拉提（Bruno Bucciarati）。他是第五部《黄金之风》中的主要角色之一，也是乔鲁诺·乔巴纳的盟友和领袖。布鲁诺·布加拉提是一个拥有强大替身能力的黑帮分子。”。"
-        text_to_synthesise = ""
         accumulated_text = ""
-        for i, chunk in enumerate(texts):
-            # use bling fire to split the text into sentences
-            # accumulated_text += chunk
-            # sentences = text_to_sentences(accumulated_text)
-            # sentences = sentences.split("\n")
-            # if len(sentences) > 1:
-            #     print(f"adding text: {sentences[0]}")
-            #     await self.add_text(sentences[0])
-            #     accumulated_text = sentences[1]
+        initial_timeout_length = 3600
+        subsequent_timeout_length = 1
+        timeout_length = initial_timeout_length
+        while True:
+            try:
+                text = await asyncio.wait_for(
+                    self.text_queue.get(), timeout=timeout_length
+                )
+                timeout_length = subsequent_timeout_length
+                # use bling fire to split the text into sentences
+                accumulated_text += text
+                sentences = text_to_sentences(accumulated_text)
+                sentences = sentences.split("\n")
+                if len(sentences) > 1:
+                    print(f"adding text: {sentences[0]}")
+                    self.result = self.speech_synthesizer.speak_text_async(
+                        sentences[0]
+                    ).get()
+                    accumulated_text = sentences[1]
+            # set a timeout, if the timeout is reached, then synthesise the rest of the text
+            except asyncio.TimeoutError:
+                # set a timeout, if the timeout is reached, then synthesise the rest of the text
+                if accumulated_text:
+                    print(f"adding text: {accumulated_text}")
+                    self.result = self.speech_synthesizer.speak_text_async(
+                        accumulated_text
+                    ).get()
+                    accumulated_text = ""
 
-            # # for the last sentence
+            # for the last sentence
             # if i == len(texts) - 1:
             #     print(f"adding text: {accumulated_text}")
             #     await self.add_text(accumulated_text)
 
-            # use a delimiter to split the text into sentences
-            text_to_synthesise += chunk
-            if chunk in DELIMITERS:
-                print(f"adding text: {text_to_synthesise}")
-                await self.add_text(text_to_synthesise)
-                text_to_synthesise = ""
+            await asyncio.sleep(0.01)
 
-            # for the last sentence
-            if i == len(texts) - 1:
-                print(f"adding text: {text_to_synthesise}")
-                await self.add_text(text_to_synthesise)
-                text_to_synthesise = ""
-
+    async def dummy_text_receiver(self):
+        """Dummy text receiver to mimic receiving chunks of text."""
+        texts = "千涵莲步轻盈，似仙子临凡间；万千思绪涌动，只为你心相印。"
+        text_to_synthesise = ""
+        accumulated_text = ""
+        # split the text by 3 elements and send to the queue
+        for i in range(0, len(texts), 3):
+            await self.add_text(texts[i : i + 3])
             await asyncio.sleep(0.01)
 
     def reset_timeout(self):

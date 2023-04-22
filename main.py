@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
@@ -130,6 +131,43 @@ async def chat_stream(websocket: WebSocket):
                 await asyncio.sleep(0.01)
 
         await websocket.send_json({"content": "DONE"})
+
+
+CHUNK_SIZE = 1024
+
+
+def generate_mp3_stream(file_path):
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            yield chunk
+
+
+@app.get("/chat/stream/mp3http")
+async def mp3_stream():
+    file_path = "output/synthesized/audio_1682202771.5076091.mp3"
+    if not os.path.exists(file_path):
+        return {"error": "File not found"}
+    print("streaming mp3 file")
+    return StreamingResponse(generate_mp3_stream(file_path), media_type="audio/mpeg")
+
+
+# a websocket to send mp3 chunks to the client
+@app.websocket("/chat/stream/mp3")
+async def mp3_stream(websocket: WebSocket):
+    await websocket.accept()
+    # wait to receive a message from the client before sending mp3 chunks
+    await websocket.receive_json()
+    print("start sending chunks")
+    # load mp3 file
+    with open("output/synthesized/audio_1682201910.6603196.mp3", "rb") as f:
+        mp3_bytes = f.read()
+    # send mp3 file in chunks
+    for i in range(0, len(mp3_bytes), 1024):
+        await websocket.send_bytes(mp3_bytes[i : i + 1024])
+        await asyncio.sleep(0.1)
 
 
 @app.websocket("/chat/stream/azureTranscript")
