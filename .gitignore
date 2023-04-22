@@ -10,3 +10,8 @@ temp/*
 resources/*
 !resources/.gitkeep
 example/
+chatgpt_snippet.py
+test.py
+
+output/*
+!output/.gitkeep 

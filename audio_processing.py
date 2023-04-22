@@ -12,8 +12,6 @@ from noisereduce import reduce_noise
 from scipy.io import wavfile
 
 from parameters import (
-    LANGUAGE_DETECT_CONFIDENCE,
-    EXPECTED_LANGUAGE,
     SENTENCE_BREAK_DURATION,
     SILENCE_THRESHOLD,
     SILENCE_SPLIT_DURATION,

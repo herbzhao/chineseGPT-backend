@@ -10,7 +10,10 @@ from pathlib import Path
 import asyncio
 import io
 import threading
-from parameters import AUDIO_SEGMENT_SPLIT_LENGTH, AUDIO_TIMEOUT_LENGTH
+from parameters import (
+    TRANSCRIBE_TIMEOUT_LENGTH,
+    INITIAL_TIMEOUT_LENGTH,
+)
 import re
 
 
@@ -32,13 +35,9 @@ class AudioTranscriber:
         # time stamp of consumed segment alrady sent to azure
         self.consumed_segment_length = 0
         self.wav_files = []
-        self.split_length = AUDIO_SEGMENT_SPLIT_LENGTH
         self.split_append_silence = 0
         self.transcripts = []
         self.first_chunk = None
-        # if no new transcript is received for x seconds, stop the stream
-        self.timeout_length = AUDIO_TIMEOUT_LENGTH
-        self.initial_timeout_length = 3600
         self.reset_timeout()
         self.chunks_queue = asyncio.Queue()
         self.language = "zh-CN"
@@ -55,7 +54,7 @@ class AudioTranscriber:
         await self.start_transcriber()
 
     def reset_timeout(self):
-        self.timeout = time.time() + self.initial_timeout_length
+        self.timeout = time.time() + INITIAL_TIMEOUT_LENGTH
 
     def convert_audio_segment_to_wav(self, audio_segment, append_silence_length=0):
         silence = AudioSegment.silent(duration=append_silence_length)
@@ -165,7 +164,7 @@ class AudioTranscriber:
 
     async def close_session(self):
         # force timeout to kick in
-        self.timeout = time.time() - self.timeout_length
+        self.timeout = time.time() - TRANSCRIBE_TIMEOUT_LENGTH
         # self.transcription_complete = True
         if self.speech_recognizer:
             self.speech_recognizer.stop_continuous_recognition()
@@ -181,7 +180,7 @@ class AudioTranscriber:
             self.transcripts.append(evt.result.text)
         else:
             self.transcripts[-1] = evt.result.text
-        self.timeout = time.time() + self.timeout_length
+        self.timeout = time.time() + TRANSCRIBE_TIMEOUT_LENGTH
         print(f"RECOGNIZING: {evt.result.text} at {time.time()}")
 
     def recognized_callback(self, evt: speechsdk.SpeechRecognitionEventArgs):

@@ -24,6 +24,7 @@ fasttext = "*"
 noisereduce = "*"
 scipy = "*"
 azure-cognitiveservices-speech = "*"
+blingfire = "*"
 
 [dev-packages]
 black = "*"

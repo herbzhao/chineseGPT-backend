@@ -7,11 +7,7 @@ import time
 import threading
 import wave
 from pathlib import Path
-import asyncio
-import io
 import threading
-from parameters import AUDIO_SEGMENT_SPLIT_LENGTH, AUDIO_TIMEOUT_LENGTH
-import re
 
 load_dotenv()
 if os.path.exists(".env.local"):

@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import os
 import time
 from backend_functions import chat
-from audio_processing import transcribing_chunks_async
 from pydantic import BaseModel
 import uvicorn
 from azure_transcriber import AudioTranscriber
@@ -119,6 +118,7 @@ async def chat_stream(websocket: WebSocket):
         # print("got response generator")
         for response_chunk in response_generator:
             chunk_message = response_chunk["choices"][0]["delta"]
+            # print(f"chunk_message: {chunk_message}")
             if "content" in chunk_message:
                 await websocket.send_json({"content": chunk_message.content})
                 complete_response += chunk_message.content
@@ -155,7 +155,7 @@ async def azure_transcript_stream(websocket: WebSocket):
             if transcripts != sent_transcripts:
                 await websocket.send_json({"transcripts": transcripts})
                 sent_transcripts = transcripts
-                print(f"{time.time() - start_time}: sent {sent_transcripts}")
+                # print(f"{time.time() - start_time}: sent {sent_transcripts}")
             await asyncio.sleep(0.1)
 
     async def handle_message(message):
@@ -163,7 +163,7 @@ async def azure_transcript_stream(websocket: WebSocket):
             voice_chunk = message["bytes"]
             # Call the add_chunk method with the received voice_chunk
             await audio_transcriber.add_chunk(voice_chunk)
-            print(f"{time.time() - start_time}: added chunk")
+            # print(f"{time.time() - start_time}: added chunk")
             if audio_transcriber.transcription_complete:
                 await websocket.send_json({"command": "DONE"})
 

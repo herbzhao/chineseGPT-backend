@@ -10,8 +10,9 @@ from pathlib import Path
 import asyncio
 import io
 import threading
-from parameters import AUDIO_SEGMENT_SPLIT_LENGTH, AUDIO_TIMEOUT_LENGTH
+from parameters import SYNTHESIS_TIMEOUT_LENGTH, DELIMITERS, LANGUAGE_VOICE_MAP
 import re
+from blingfire import text_to_sentences
 
 
 class AudioSynthesiser:
@@ -26,12 +27,11 @@ class AudioSynthesiser:
             print("GETTING PRODUCTION ENVIRONMENT VARIABLES")
             load_dotenv(".env.production")
 
-        # self.delimiters = "[。！？，。,  . \n]"
-        # self.delimiters = "[！？。 . \n]"
-        self.delimiters = "[\n]"
+        self.initial_timeout_length = 3600
+        self.reset_timeout()
         self.text_queue = asyncio.Queue()
 
-    def speech_synthesis_to_push_audio_output_stream(self):
+    def speech_synthesis_to_push_audio_output_stream(self, language: str = "zh-CN"):
         """performs speech synthesis and push audio output to a stream"""
 
         class PushAudioOutputStreamSampleCallback(
@@ -42,8 +42,13 @@ class AudioSynthesiser:
             how to push output audio to a stream
             """
 
-            def __init__(self) -> None:
+            def __init__(self, parent: "AudioSynthesiser") -> None:
+                # allow child class to call the constructor of its parent class.
+                # calling super().__init__(), the PushAudioOutputStreamSampleCallback class inherits
+                # the properties and methods of the speechsdk.audio.PushAudioOutputStreamCallback class
+                #  and can then add or modify them as needed.
                 super().__init__()
+                self.parent = parent
                 self._audio_data = bytes(0)
                 self._closed = False
 
@@ -53,6 +58,7 @@ class AudioSynthesiser:
                 to write out
                 """
                 self._audio_data += audio_buffer
+                self.parent.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
                 print("{} bytes received.".format(audio_buffer.nbytes))
                 return audio_buffer.nbytes
 
@@ -74,16 +80,16 @@ class AudioSynthesiser:
                 audio_data = self.get_audio_data()
                 # split the audio_data into three parts
                 # and save them to three different files
-                split_points = [
-                    len(audio_data) // 3,
-                    len(audio_data) * 2 // 3,
-                    len(audio_data),
-                ]
-                for i, pt in enumerate(split_points):
-                    segment = audio_data[:pt]
-                    filename = f"resources/synthesized/audio{i}.mp3"
-                    with open(filename, "ab") as f:
-                        f.write(segment)
+                # split_points = [
+                #     len(audio_data) // 3,
+                #     len(audio_data) * 2 // 3,
+                #     len(audio_data),
+                # ]
+                # for i, pt in enumerate(split_points):
+                # segment = audio_data[:pt]
+                filename = f"output/synthesized/audio_{time.time()}.mp3"
+                with open(filename, "ab") as f:
+                    f.write(audio_data)
 
                 print(f"Audio data saved to {os.path.abspath(filename)}")
 
@@ -98,11 +104,15 @@ class AudioSynthesiser:
         speech_config.set_speech_synthesis_output_format(
             speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
         )
-        language = "zh-CN"
-        speech_config.speech_synthesis_language = language
+
+        if language in LANGUAGE_VOICE_MAP:
+            voice = LANGUAGE_VOICE_MAP[language]
+            speech_config.speech_synthesis_voice_name = voice
+        else:
+            speech_config.speech_synthesis_language = language
 
         # Creates customized instance of PushAudioOutputStreamCallback
-        self.stream_callback = PushAudioOutputStreamSampleCallback()
+        self.stream_callback = PushAudioOutputStreamSampleCallback(parent=self)
         # Creates audio output stream from the callback
         self.push_stream = speechsdk.audio.PushAudioOutputStream(self.stream_callback)
         # Creates a speech synthesizer using push stream as audio output.
@@ -111,28 +121,64 @@ class AudioSynthesiser:
             speech_config=speech_config, audio_config=stream_config
         )
 
-        # # Destroys result which is necessary for destroying speech synthesizer
-        # del result
-        # # Destroys the synthesizer in order to close the output stream.
-        # del self.speech_synthesizer
+    def close(self):
+        del self.speech_synthesizer
+        del self.result
 
-    # add prompt to the queue
-    async def add_text(self, chunk):
+    async def add_text(self, chunk: str) -> None:
+        """Add a chunk of text to the text queue."""
         await self.text_queue.put(chunk)
 
     # digest the text in the queue
-    async def process_text(self):
+    async def process_text(self) -> None:
+        """Process the text in the text queue."""
         while True:
             text = await self.text_queue.get()
-            result = self.speech_synthesizer.speak_text_async(text).get()
+            self.result = self.speech_synthesizer.speak_text_async(text).get()
             await asyncio.sleep(0.1)
 
     async def dummy_text_receiver(self):
-        texts = ["今天的天气怎么样?", "明天我需要准备什么?", "请提醒我下午两点开会。"]
-        for text in texts:
-            await self.add_text(text)
-            # mimic receiving chunks every x seconds
-            await asyncio.sleep(0.1)
+        """Dummy text receiver to mimic receiving chunks of text."""
+        texts = "“布姐”是指《JOJO的奇妙冒险》中的角色布鲁诺·布加拉提（Bruno Bucciarati）。他是第五部《黄金之风》中的主要角色之一，也是乔鲁诺·乔巴纳的盟友和领袖。布鲁诺·布加拉提是一个拥有强大替身能力的黑帮分子。”。"
+        text_to_synthesise = ""
+        accumulated_text = ""
+        for i, chunk in enumerate(texts):
+            # use bling fire to split the text into sentences
+            # accumulated_text += chunk
+            # sentences = text_to_sentences(accumulated_text)
+            # sentences = sentences.split("\n")
+            # if len(sentences) > 1:
+            #     print(f"adding text: {sentences[0]}")
+            #     await self.add_text(sentences[0])
+            #     accumulated_text = sentences[1]
+
+            # # for the last sentence
+            # if i == len(texts) - 1:
+            #     print(f"adding text: {accumulated_text}")
+            #     await self.add_text(accumulated_text)
+
+            # use a delimiter to split the text into sentences
+            text_to_synthesise += chunk
+            if chunk in DELIMITERS:
+                print(f"adding text: {text_to_synthesise}")
+                await self.add_text(text_to_synthesise)
+                text_to_synthesise = ""
+
+            # for the last sentence
+            if i == len(texts) - 1:
+                print(f"adding text: {text_to_synthesise}")
+                await self.add_text(text_to_synthesise)
+                text_to_synthesise = ""
+
+            await asyncio.sleep(0.01)
+
+    def reset_timeout(self):
+        """Reset the timeout at the start of each synthesis"""
+        self.timeout = time.time() + self.initial_timeout_length
+
+    @property
+    def synthesis_complete(self):
+        return time.time() > self.timeout
 
 
 if __name__ == "__main__":
@@ -141,12 +187,18 @@ if __name__ == "__main__":
     async def run_dummy():
         print(f"starting at {time.time()}")
         audio_synthesiser = AudioSynthesiser()
-        audio_synthesiser.speech_synthesis_to_push_audio_output_stream()
+        audio_synthesiser.speech_synthesis_to_push_audio_output_stream(language="zh-CN")
 
         asyncio.create_task(audio_synthesiser.dummy_text_receiver())
         asyncio.create_task(audio_synthesiser.process_text())
+        # continue to run until synthesis is complete
+        while True:
+            if audio_synthesiser.synthesis_complete:
+                print("SYNTHESIS COMPLETE")
+                break
+            await asyncio.sleep(0.1)
 
-        await asyncio.sleep(5)
         audio_synthesiser.stream_callback.save_to_file()
+        audio_synthesiser.close()
 
     asyncio.run(run_dummy())

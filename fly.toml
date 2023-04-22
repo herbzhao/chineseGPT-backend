@@ -1,41 +1,32 @@
-# fly.toml file generated for gpt-api on 2023-04-05T20:13:41+01:00
+# fly.toml file generated for gpt-api on 2023-04-22T08:06:04+01:00
 
 app = "gpt-api"
 kill_signal = "SIGINT"
 kill_timeout = 5
-mounts = []
-primary_region = "nrt"
-processes = []
-
+primary_region = "hkg"
 
 [build]
-# Install FFmpeg using the package manager
-# builder = "paketobuildpacks/builder:base"
-# builder = "heroku/buildpacks:18"
-# buildpacks = [
-#     "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git",
-# ]
-dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
-PORT = "8080"
-FFMPEG_PATH = "/usr/bin/ffmpeg"
-ENVIRONMENT = "production"
+  ENVIRONMENT = "production"
+  FFMPEG_PATH = "/usr/bin/ffmpeg"
+  PORT = "8080"
 
 [[services]]
-internal_port = 8080
-processes = ["app"]
-protocol = "tcp"
-[services.concurrency]
-hard_limit = 25
-soft_limit = 20
-type = "connections"
+  protocol = "tcp"
+  internal_port = 8080
+  processes = ["app"]
 
-[[services.ports]]
-force_https = true
-handlers = ["http"]
-port = 80
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
 
-[[services.ports]]
-handlers = ["tls", "http"]
-port = 443
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
