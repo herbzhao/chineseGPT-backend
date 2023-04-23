@@ -36,6 +36,7 @@ class AudioSynthesiser:
         self.reset_timeout()
         self.text_queue = asyncio.Queue()
         self.output_filename = ""
+        self.session_id = None
 
     def speech_synthesis_to_push_audio_output_stream(self, language: str = "zh-CN"):
         """performs speech synthesis and push audio output to a stream"""
@@ -65,7 +66,13 @@ class AudioSynthesiser:
                 """
                 self._audio_data += audio_buffer
                 self.parent.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
-                print("{} bytes received.".format(audio_buffer.nbytes))
+                # print("{} bytes received.".format(audio_buffer.nbytes))
+                filename = f"output/synthesized/audio_{self.parent.session_id}.mp3"
+                # append the newly received audio data to the existing file
+                with open(filename, "ab") as f:
+                    # print(f"Saving audio to {filename}")
+                    f.write(audio_buffer)
+
                 return audio_buffer.nbytes
 
             def close(self) -> None:
@@ -90,6 +97,18 @@ class AudioSynthesiser:
 
                 self.parent.output_filename = filename
                 print(f"Audio data saved to {os.path.abspath(filename)}")
+
+            def save_to_file_session(self, session_id: str) -> None:
+                audio_data = self.get_audio_data()
+                filename = f"output/synthesized/audio_{session_id}.mp3"
+                # append the newly received audio data to the existing file
+                with open(filename, "ab") as f:
+                    print(f"Saving audio to {filename}")
+                    f.write(audio_data)
+                # print(f"Audio data saved to {os.path.abspath(filename)}")
+
+                # clean up the audio data
+                self._audio_data = bytes(0)
 
         # Creates an instance of a speech config with specified subscription key and service region.
         speech_config = speechsdk.SpeechConfig(
@@ -144,16 +163,17 @@ class AudioSynthesiser:
                 sentences = text_to_sentences(accumulated_text)
                 sentences = sentences.split("\n")
                 if len(sentences) > 1:
-                    print(f"adding text: {sentences[0]}")
+                    print(f"synthesizing: {sentences[0]}")
                     self.result = self.speech_synthesizer.speak_text_async(
                         sentences[0]
                     ).get()
                     accumulated_text = sentences[1]
+
             # set a timeout, if the timeout is reached, then synthesise the rest of the text
             except asyncio.TimeoutError:
                 # set a timeout, if the timeout is reached, then synthesise the rest of the text
                 if accumulated_text:
-                    print(f"adding text: {accumulated_text}")
+                    print(f"synthesizing final sentence: {accumulated_text}")
                     self.result = self.speech_synthesizer.speak_text_async(
                         accumulated_text
                     ).get()
