@@ -87,9 +87,8 @@ def send_response(prompt_request: PromptRequest) -> None:
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
     complete_response = ""
-    synthesise_answer = False
-    if synthesise_answer:
-        audio_synthesiser = AudioSynthesiser()
+    synthesise_answer = True
+
     while True:
         prompt_request = await websocket.receive_json()
         prompt_request = PromptRequest(**prompt_request)
@@ -108,20 +107,32 @@ async def chat_stream(websocket: WebSocket):
             session_id="test_api",
         )
         # print("got response generator")
-        for response_chunk in response_generator:
-            chunk_message = response_chunk["choices"][0]["delta"]
-            # print(f"chunk_message: {chunk_message}")
-            if "content" in chunk_message:
-                await websocket.send_json({"content": chunk_message.content})
-                complete_response += chunk_message.content
-                if synthesise_answer:
-                    synthesised_file = audio_synthesiser.synthesis_to_mp3(
-                        complete_response
-                    )
-                    websocket.send_bytes(audio_synthesiser.mp3_chunks)
+        if synthesise_answer:
+            session_id = str(uuid4())
+
+            await websocket.send_json(
+                {
+                    "session_id": session_id,
+                }
+            )
+            for response_chunk in response_generator:
+                chunk_message = response_chunk["choices"][0]["delta"]
+                try:
+                    await text_to_speech(chunk_message.content, session_id)
+                    await websocket.send_json({"content": chunk_message.content})
+                except AttributeError:
+                    pass
+                await asyncio.sleep(0.01)
+        else:
+            for response_chunk in response_generator:
+                chunk_message = response_chunk["choices"][0]["delta"]
+                try:
+                    await websocket.send_json({"content": chunk_message.content})
+                except AttributeError:
+                    pass
                 await asyncio.sleep(0.01)
 
-        await websocket.send_json({"content": "DONE"})
+        await websocket.send_json({"command": "DONE"})
 
 
 class TextToSpeech(BaseModel):
@@ -170,7 +181,7 @@ async def generate_mp3_stream(file_path):
     current_position = 0
     previous_file_size = 0
     # if no new additional data is written to the file for 2 seconds, exit the loop
-    timeout_length = 2
+    timeout_length = 1
 
     while not os.path.exists(file_path):
         await asyncio.sleep(0.1)
@@ -198,7 +209,7 @@ async def generate_mp3_stream(file_path):
 
                 # update the previous_file_size to the current file size
                 previous_file_size = file_size
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.01)
 
         await asyncio.sleep(0.01)
 
