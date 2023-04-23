@@ -150,10 +150,7 @@ class TextToSpeech(BaseModel):
     text: str
 
 
-# receive text and save a mp3 file
-@app.post("/chat/stream/text_to_speech")
-async def text_to_speech(text: TextToSpeech, session_id: str = Depends(get_session_id)):
-    text = text.text
+async def text_to_speech(text: str, session_id: str):
     audio_synthesiser = AudioSynthesiser()
     audio_synthesiser.speech_synthesis_to_push_audio_output_stream(language="zh-CN")
     asyncio.create_task(audio_synthesiser.process_text())
@@ -166,7 +163,17 @@ async def text_to_speech(text: TextToSpeech, session_id: str = Depends(get_sessi
     audio_synthesiser.stream_callback.save_to_file()
     audio_synthesiser.close()
 
-    app.state.generated_files[session_id] = audio_synthesiser.output_filename
+    return audio_synthesiser.output_filename
+
+
+# receive text and save a mp3 file
+@app.post("/chat/stream/text_to_speech")
+async def text_to_speech_endpoint(
+    text: TextToSpeech, session_id: str = Depends(get_session_id)
+):
+    text = text.text
+    output_filename = await text_to_speech(text, session_id)
+    app.state.generated_files[session_id] = output_filename
     return {
         "file_path": app.state.generated_files[session_id],
         "session_id": session_id,
