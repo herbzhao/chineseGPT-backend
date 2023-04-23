@@ -15,7 +15,9 @@ INITIAL_TIMEOUT_LENGTH = 3600
 # synthesise related
 DELIMITERS = ["。", "！", "？", "，", "。", ",", ".", "\n"]
 # self.delimiters = "[！？。 . \n]"
+TEXT_RECEIVE_TIMEOUT_LENGTH = 1
 SYNTHESIS_TIMEOUT_LENGTH = 2
 LANGUAGE_VOICE_MAP = {"en-GB": "en-US-NancyNeural", "zh-CN": "zh-CN-XiaochenNeural"}
 
 EXPECTED_LANGUAGE = ["en-GB", "zh-CN"]
+MP3_SENDING_CHUNK_SIZE = 2048

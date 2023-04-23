@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -11,6 +11,8 @@ from azure_transcriber import AudioTranscriber
 from azure_synthesiser import AudioSynthesiser
 import asyncio
 import json
+from parameters import MP3_SENDING_CHUNK_SIZE
+from uuid import uuid4
 
 load_dotenv()
 
@@ -38,32 +40,19 @@ app.add_middleware(
 # https://fastapi.tiangolo.com/advanced/events/
 @app.on_event("startup")
 async def startup_event():
-    app.language = "zh-CN"
+    app.state.generated_files = {}
     # perform additional initialization tasks here
+
+
+async def get_session_id(session_id: str = ""):
+    if not session_id:
+        session_id = str(uuid4())
+    return session_id
 
 
 @app.get("/test")
 def root():
     return {"msg": "fastapi is working"}
-
-
-# https://www.starlette.io/websockets/
-@app.websocket("/stream")
-async def websocket_endpoint(websocket: WebSocket):
-    # example async generator to test websocket streaming
-    async def example_generator(data):
-        for i in range(10):
-            yield f"{data} + {i}"
-            time.sleep(0.1)
-
-    await websocket.accept()
-    data = await websocket.receive_json()
-    print(f"Received data: {data}")
-    # send generator data to client
-    async for value in example_generator(data["message"]):
-        await websocket.send_json({"data": value})
-    await websocket.send_json({"data": "completed"})
-    # await websocket.close(code=1000, reason=None)
 
 
 class PromptRequest(BaseModel):
@@ -133,41 +122,55 @@ async def chat_stream(websocket: WebSocket):
         await websocket.send_json({"content": "DONE"})
 
 
-CHUNK_SIZE = 1024
-
-
 def generate_mp3_stream(file_path):
     with open(file_path, "rb") as f:
         while True:
-            chunk = f.read(CHUNK_SIZE)
+            chunk = f.read(MP3_SENDING_CHUNK_SIZE)
             if not chunk:
                 break
             yield chunk
 
 
+# automatically serve the newly generated mp3 file
 @app.get("/chat/stream/mp3http")
-async def mp3_stream():
-    file_path = "output/synthesized/audio_1682202771.5076091.mp3"
-    if not os.path.exists(file_path):
-        return {"error": "File not found"}
-    print("streaming mp3 file")
-    return StreamingResponse(generate_mp3_stream(file_path), media_type="audio/mpeg")
+async def mp3_stream(session_id: str = Depends(get_session_id)):
+    if session_id in app.state.generated_files:
+        print("session id found")
+        file_path = app.state.generated_files[session_id]
+        if not os.path.exists(file_path):
+            return {"error": "File not found"}
+        print("streaming mp3 file")
+        return StreamingResponse(
+            generate_mp3_stream(file_path), media_type="audio/mpeg"
+        )
+    await asyncio.sleep(0.1)
 
 
-# a websocket to send mp3 chunks to the client
-@app.websocket("/chat/stream/mp3")
-async def mp3_stream(websocket: WebSocket):
-    await websocket.accept()
-    # wait to receive a message from the client before sending mp3 chunks
-    await websocket.receive_json()
-    print("start sending chunks")
-    # load mp3 file
-    with open("output/synthesized/audio_1682201910.6603196.mp3", "rb") as f:
-        mp3_bytes = f.read()
-    # send mp3 file in chunks
-    for i in range(0, len(mp3_bytes), 1024):
-        await websocket.send_bytes(mp3_bytes[i : i + 1024])
+class TextToSpeech(BaseModel):
+    text: str
+
+
+# receive text and save a mp3 file
+@app.post("/chat/stream/text_to_speech")
+async def text_to_speech(text: TextToSpeech, session_id: str = Depends(get_session_id)):
+    text = text.text
+    audio_synthesiser = AudioSynthesiser()
+    audio_synthesiser.speech_synthesis_to_push_audio_output_stream(language="zh-CN")
+    asyncio.create_task(audio_synthesiser.process_text())
+    await audio_synthesiser.add_text(text)
+    while True:
+        if audio_synthesiser.synthesis_complete:
+            print("SYNTHESIS COMPLETE")
+            break
         await asyncio.sleep(0.1)
+    audio_synthesiser.stream_callback.save_to_file()
+    audio_synthesiser.close()
+
+    app.state.generated_files[session_id] = audio_synthesiser.output_filename
+    return {
+        "file_path": app.state.generated_files[session_id],
+        "session_id": session_id,
+    }
 
 
 @app.websocket("/chat/stream/azureTranscript")

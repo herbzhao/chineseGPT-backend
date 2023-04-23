@@ -10,7 +10,13 @@ from pathlib import Path
 import asyncio
 import io
 import threading
-from parameters import SYNTHESIS_TIMEOUT_LENGTH, DELIMITERS, LANGUAGE_VOICE_MAP
+from parameters import (
+    SYNTHESIS_TIMEOUT_LENGTH,
+    DELIMITERS,
+    LANGUAGE_VOICE_MAP,
+    INITIAL_TIMEOUT_LENGTH,
+    TEXT_RECEIVE_TIMEOUT_LENGTH,
+)
 import re
 from blingfire import text_to_sentences
 
@@ -27,9 +33,9 @@ class AudioSynthesiser:
             print("GETTING PRODUCTION ENVIRONMENT VARIABLES")
             load_dotenv(".env.production")
 
-        self.initial_timeout_length = 3600
         self.reset_timeout()
         self.text_queue = asyncio.Queue()
+        self.output_filename = ""
 
     def speech_synthesis_to_push_audio_output_stream(self, language: str = "zh-CN"):
         """performs speech synthesis and push audio output to a stream"""
@@ -82,6 +88,7 @@ class AudioSynthesiser:
                 with open(filename, "ab") as f:
                     f.write(audio_data)
 
+                self.parent.output_filename = filename
                 print(f"Audio data saved to {os.path.abspath(filename)}")
 
         # Creates an instance of a speech config with specified subscription key and service region.
@@ -117,22 +124,21 @@ class AudioSynthesiser:
         del self.result
 
     async def add_text(self, chunk: str) -> None:
-        """Add a chunk of text to the text queue."""
+        """Add a chunk of text to the text queue, waiting to be processed."""
         await self.text_queue.put(chunk)
 
-    # digest the text in the queue
     async def process_text(self) -> None:
-        """Process the text in the text queue."""
+        """Process the text in the text queue and synthesise the text."""
         accumulated_text = ""
-        initial_timeout_length = 3600
         subsequent_timeout_length = 1
-        timeout_length = initial_timeout_length
+        # this timeout is for receiving new text
+        timeout_length = INITIAL_TIMEOUT_LENGTH
         while True:
             try:
                 text = await asyncio.wait_for(
                     self.text_queue.get(), timeout=timeout_length
                 )
-                timeout_length = subsequent_timeout_length
+                timeout_length = TEXT_RECEIVE_TIMEOUT_LENGTH
                 # use bling fire to split the text into sentences
                 accumulated_text += text
                 sentences = text_to_sentences(accumulated_text)
@@ -153,11 +159,6 @@ class AudioSynthesiser:
                     ).get()
                     accumulated_text = ""
 
-            # for the last sentence
-            # if i == len(texts) - 1:
-            #     print(f"adding text: {accumulated_text}")
-            #     await self.add_text(accumulated_text)
-
             await asyncio.sleep(0.01)
 
     async def dummy_text_receiver(self):
@@ -172,7 +173,7 @@ class AudioSynthesiser:
 
     def reset_timeout(self):
         """Reset the timeout at the start of each synthesis"""
-        self.timeout = time.time() + self.initial_timeout_length
+        self.timeout = time.time() + INITIAL_TIMEOUT_LENGTH
 
     @property
     def synthesis_complete(self):
