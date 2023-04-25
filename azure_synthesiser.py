@@ -38,6 +38,51 @@ class AudioSynthesiser:
         self.output_filename = ""
         self.session_id = None
 
+    def speech_synthesis_to_mp3(
+        self, text: str = "", filename: str = "", language: str = "zh-CN"
+    ):
+        """performs speech synthesis to mp3 file"""
+        # Creates an instance of a speech config with specified subscription key and service region.
+        speech_config = speechsdk.SpeechConfig(
+            subscription=os.environ.get("SPEECH_KEY"),
+            region=os.environ.get("SPEECH_REGION"),
+        )
+        # Sets the synthesis output format.
+        # The full list of supported format can be found here:
+        # https://docs.microsoft.com/azure/cognitive-services/speech-service/rest-text-to-speech#audio-outputs
+        speech_config.set_speech_synthesis_output_format(
+            speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
+        )
+
+        if language in LANGUAGE_VOICE_MAP:
+            voice = LANGUAGE_VOICE_MAP[language]
+            speech_config.speech_synthesis_voice_name = voice
+        else:
+            speech_config.speech_synthesis_language = language
+
+        # save to mp3 file
+        # audio_config = speechsdk.audio.AudioOutputConfig(filename=filename)
+
+        # Create a BytesIO object to store the synthesized audio
+        output_stream = io.BytesIO()
+        audio_config = speechsdk.audio.AudioOutputConfig(stream=output_stream)
+
+        speech_synthesizer = speechsdk.SpeechSynthesizer(
+            speech_config=speech_config, audio_config=audio_config
+        )
+        # Performs speech synthesis to mp3 file.
+        result = speech_synthesizer.speak_text_async(text).get()
+
+        # Checks result.
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            print("Speech synthesized to BytesIO for text [{}]".format(text))
+            # Reset the stream position to the beginning
+            output_stream.seek(0)
+            return output_stream
+        else:
+            print("Speech synthesis failed")
+            return None
+
     def speech_synthesis_to_push_audio_output_stream(self, language: str = "zh-CN"):
         """performs speech synthesis and push audio output to a stream"""
 
@@ -70,7 +115,7 @@ class AudioSynthesiser:
                 filename = f"output/synthesized/audio_{self.parent.session_id}.mp3"
                 # append the newly received audio data to the existing file
                 with open(filename, "ab") as f:
-                    # print(f"Saving audio to {filename}")
+                    print(f"Saving audio to {filename}")
                     f.write(audio_buffer)
 
                 return audio_buffer.nbytes
@@ -149,7 +194,7 @@ class AudioSynthesiser:
     async def process_text(self) -> None:
         """Process the text in the text queue and synthesise the text."""
         accumulated_text = ""
-        subsequent_timeout_length = 1
+        num_of_sentences = 0
         # this timeout is for receiving new text
         timeout_length = INITIAL_TIMEOUT_LENGTH
         while True:
@@ -163,27 +208,36 @@ class AudioSynthesiser:
                 sentences = text_to_sentences(accumulated_text)
                 sentences = sentences.split("\n")
                 if len(sentences) > 1:
-                    print(f"synthesizing: {sentences[0]}")
-                    self.result = self.speech_synthesizer.speak_text_async(
-                        sentences[0]
-                    ).get()
+                    if num_of_sentences == 0:
+                        folder = Path("output") / "synthesized" / self.session_id
+                        folder.mkdir(parents=True, exist_ok=True)
+                    num_of_sentences += 1
+                    print(f"synthesising: {sentences[0]}")
+                    filename = folder / f"{num_of_sentences}.mp3"
+                    self.speech_synthesis_to_mp3(sentences[0], str(filename.absolute()))
                     accumulated_text = sentences[1]
+                # wait for more text prior to timeout
+                else:
+                    await asyncio.sleep(0.1)
 
             # set a timeout, if the timeout is reached, then synthesise the rest of the text
             except asyncio.TimeoutError:
                 # set a timeout, if the timeout is reached, then synthesise the rest of the text
                 if accumulated_text:
                     print(f"synthesizing final sentence: {accumulated_text}")
-                    self.result = self.speech_synthesizer.speak_text_async(
-                        accumulated_text
-                    ).get()
+                    num_of_sentences += 1
+                    filename = folder / f"{num_of_sentences}.mp3"
+                    self.speech_synthesis_to_mp3(sentences[0], str(filename.absolute()))
+                    # reset the loop
                     accumulated_text = ""
-
-            await asyncio.sleep(0.01)
+                    num_of_sentences = 0
+                    timeout_length = INITIAL_TIMEOUT_LENGTH
 
     async def dummy_text_receiver(self):
         """Dummy text receiver to mimic receiving chunks of text."""
-        texts = "千涵莲步轻盈，似仙子临凡间；万千思绪涌动，只为你心相印。"
+        texts = (
+            "有一天，小花在公园里玩耍，发现了一个漂亮的蝴蝶。小花兴奋地追赶着蝴蝶，但是它不小心跑到了一个陌生的地方。小花感到害怕和孤独，不知道该怎么回家。"
+        )
         text_to_synthesise = ""
         accumulated_text = ""
         # split the text by 3 elements and send to the queue
@@ -202,22 +256,23 @@ class AudioSynthesiser:
 
 if __name__ == "__main__":
     audio_synthesiser = AudioSynthesiser()
+    filename = Path("output") / "synthesized" / (str(time.time()) + ".mp3")
+    absolute_path = os.path.abspath(filename)
+    audio_synthesiser.speech_synthesis_to_mp3("你好一二三", absolute_path)
 
-    async def run_dummy():
-        print(f"starting at {time.time()}")
-        audio_synthesiser = AudioSynthesiser()
-        audio_synthesiser.speech_synthesis_to_push_audio_output_stream(language="zh-CN")
+    # async def run_dummy():
+    #     print(f"starting at {time.time()}")
+    #     audio_synthesiser = AudioSynthesiser()
+    #     audio_synthesiser.session_id = "test"
+    #     asyncio.create_task(audio_synthesiser.dummy_text_receiver())
+    #     asyncio.create_task(audio_synthesiser.process_text())
+    #     # continue to run until synthesis is complete
+    #     while True:
+    #         if audio_synthesiser.synthesis_complete:
+    #             print("SYNTHESIS COMPLETE")
+    #             break
+    #         await asyncio.sleep(0.1)
 
-        asyncio.create_task(audio_synthesiser.dummy_text_receiver())
-        asyncio.create_task(audio_synthesiser.process_text())
-        # continue to run until synthesis is complete
-        while True:
-            if audio_synthesiser.synthesis_complete:
-                print("SYNTHESIS COMPLETE")
-                break
-            await asyncio.sleep(0.1)
+    #     audio_synthesiser.close()
 
-        audio_synthesiser.stream_callback.save_to_file()
-        audio_synthesiser.close()
-
-    asyncio.run(run_dummy())
+    # asyncio.run(run_dummy())

@@ -11,7 +11,11 @@ from azure_transcriber import AudioTranscriber
 from azure_synthesiser import AudioSynthesiser
 import asyncio
 import json
-from parameters import MP3_SENDING_CHUNK_SIZE
+from parameters import (
+    MP3_SENDING_CHUNK_SIZE,
+    MP3_SENDING_TIMEOUT_LENGTH,
+    INITIAL_TIMEOUT_LENGTH,
+)
 from uuid import uuid4
 
 load_dotenv()
@@ -122,7 +126,7 @@ async def chat_stream(websocket: WebSocket):
                     await websocket.send_json({"content": chunk_message.content})
                 except AttributeError:
                     pass
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.05)
         else:
             for response_chunk in response_generator:
                 chunk_message = response_chunk["choices"][0]["delta"]
@@ -177,41 +181,62 @@ async def text_to_speech_endpoint(
     }
 
 
-async def generate_mp3_stream(file_path):
+async def generate_mp3_stream_async(file_path):
     current_position = 0
     previous_file_size = 0
-    # if no new additional data is written to the file for 2 seconds, exit the loop
-    timeout_length = 1
-
+    timeout = time.time() + INITIAL_TIMEOUT_LENGTH
+    print("checking filepath" + file_path)
     while not os.path.exists(file_path):
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
     while True:
-        try:
-            await asyncio.wait_for(
-                check_new_data(file_path, previous_file_size), timeout_length
-            )
-        except asyncio.TimeoutError:
+        file_size = os.path.getsize(file_path)
+        print(file_size)
+        if time.time() > timeout:
             print("timeout reached")
             break
-
-        file_size = os.path.getsize(file_path)
         if file_size > current_position:
             with open(file_path, "rb") as f:
                 f.seek(current_position)
+                # read file chunk by chunk
                 chunk = f.read(MP3_SENDING_CHUNK_SIZE)
-
                 while chunk:
                     current_position = f.tell()
                     yield chunk
+                    print(f"current position: {current_position}")
                     chunk = f.read(MP3_SENDING_CHUNK_SIZE)
+                    timeout = time.time() + MP3_SENDING_TIMEOUT_LENGTH
                     await asyncio.sleep(0.01)
 
-                # update the previous_file_size to the current file size
-                previous_file_size = file_size
-                await asyncio.sleep(0.01)
+        await asyncio.sleep(0.5)
 
-        await asyncio.sleep(0.01)
+
+def generate_mp3_stream(file_path):
+    current_position = 0
+    previous_file_size = 0
+    timeout = time.time() + INITIAL_TIMEOUT_LENGTH
+    print("checking filepath" + file_path)
+    while not os.path.exists(file_path):
+        time.sleep(0.5)
+
+    while True:
+        file_size = os.path.getsize(file_path)
+        if time.time() > timeout:
+            print("timeout reached")
+            break
+        if file_size > current_position:
+            with open(file_path, "rb") as f:
+                f.seek(current_position)
+                # read file chunk by chunk
+                chunk = f.read(MP3_SENDING_CHUNK_SIZE)
+                while chunk:
+                    current_position = f.tell()
+                    yield chunk
+                    print(f"current position: {current_position}")
+                    chunk = f.read(MP3_SENDING_CHUNK_SIZE)
+                    timeout = time.time() + MP3_SENDING_TIMEOUT_LENGTH
+
+        time.sleep(0.5)
 
 
 async def check_new_data(file_path, previous_file_size):
