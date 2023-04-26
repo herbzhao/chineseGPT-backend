@@ -16,7 +16,7 @@ INITIAL_TIMEOUT_LENGTH = 3600
 DELIMITERS = ["。", "！", "？", "，", "。", ",", ".", "\n"]
 # self.delimiters = "[！？。 . \n]"
 TEXT_RECEIVE_TIMEOUT_LENGTH = 0.5
-SYNTHESIS_TIMEOUT_LENGTH = 0.5
+SYNTHESIS_TIMEOUT_LENGTH = 5
 LANGUAGE_VOICE_MAP = {"en-GB": "en-US-NancyNeural", "zh-CN": "zh-CN-XiaochenNeural"}
 
 EXPECTED_LANGUAGE = ["en-GB", "zh-CN"]

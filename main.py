@@ -1,5 +1,5 @@
 from fastapi import FastAPI, WebSocket, Depends, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
@@ -148,7 +148,6 @@ async def text_to_speech(text: str, session_id: str):
         # if the session id is not in the dictionary, start the synthesiser
         app.state.synthesiser[session_id] = AudioSynthesiser()
         audio_synthesiser = app.state.synthesiser[session_id]
-        audio_synthesiser.speech_synthesis_to_push_audio_output_stream(language="zh-CN")
         audio_synthesiser.session_id = session_id
         asyncio.create_task(audio_synthesiser.process_text())
     else:
@@ -181,85 +180,21 @@ async def text_to_speech_endpoint(
     }
 
 
-async def generate_mp3_stream_async(file_path):
-    current_position = 0
-    previous_file_size = 0
-    timeout = time.time() + INITIAL_TIMEOUT_LENGTH
-    print("checking filepath" + file_path)
-    while not os.path.exists(file_path):
-        await asyncio.sleep(0.5)
-
-    while True:
-        file_size = os.path.getsize(file_path)
-        print(file_size)
-        if time.time() > timeout:
-            print("timeout reached")
-            break
-        if file_size > current_position:
-            with open(file_path, "rb") as f:
-                f.seek(current_position)
-                # read file chunk by chunk
-                chunk = f.read(MP3_SENDING_CHUNK_SIZE)
-                while chunk:
-                    current_position = f.tell()
-                    yield chunk
-                    print(f"current position: {current_position}")
-                    chunk = f.read(MP3_SENDING_CHUNK_SIZE)
-                    timeout = time.time() + MP3_SENDING_TIMEOUT_LENGTH
-                    await asyncio.sleep(0.01)
-
-        await asyncio.sleep(0.5)
-
-
-def generate_mp3_stream(file_path):
-    current_position = 0
-    previous_file_size = 0
-    timeout = time.time() + INITIAL_TIMEOUT_LENGTH
-    print("checking filepath" + file_path)
-    while not os.path.exists(file_path):
-        time.sleep(0.5)
-
-    while True:
-        file_size = os.path.getsize(file_path)
-        if time.time() > timeout:
-            print("timeout reached")
-            break
-        if file_size > current_position:
-            with open(file_path, "rb") as f:
-                f.seek(current_position)
-                # read file chunk by chunk
-                chunk = f.read(MP3_SENDING_CHUNK_SIZE)
-                while chunk:
-                    current_position = f.tell()
-                    yield chunk
-                    print(f"current position: {current_position}")
-                    chunk = f.read(MP3_SENDING_CHUNK_SIZE)
-                    timeout = time.time() + MP3_SENDING_TIMEOUT_LENGTH
-
-        time.sleep(0.5)
-
-
-async def check_new_data(file_path, previous_file_size):
-    while True:
-        file_size = os.path.getsize(file_path)
-        if previous_file_size < file_size:
-            print(f"file size increased from {previous_file_size} to {file_size}")
-            return True
-        await asyncio.sleep(0.1)
-
-
 # automatically serve the newly generated mp3 file
-@app.get("/chat/stream/mp3http")
-async def mp3_stream(session_id: str = Depends(get_session_id)):
+@app.get("/chat/stream/serve_synthesized_audio")
+async def mp3_stream(
+    session_id: str = Depends(get_session_id), num_of_sentence: int = 0
+):
     if session_id in app.state.synthesiser:
         print("session id found")
-        file_path = f"output/synthesized/audio_{session_id}.mp3"
+        file_path = f"output/synthesized/{session_id}/{num_of_sentence}.mp3"
         print(f"streaming file path: {file_path}")
-
+        if not os.path.exists(file_path):
+            print("file not found")
+            return {"error": "file not ready"}
         print("streaming mp3 file")
-        return StreamingResponse(
-            generate_mp3_stream(file_path), media_type="audio/mpeg"
-        )
+
+        return FileResponse(file_path, media_type="audio/mpeg")
 
 
 @app.websocket("/chat/stream/azureTranscript")

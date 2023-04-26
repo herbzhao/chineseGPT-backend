@@ -61,11 +61,11 @@ class AudioSynthesiser:
             speech_config.speech_synthesis_language = language
 
         # save to mp3 file
-        # audio_config = speechsdk.audio.AudioOutputConfig(filename=filename)
+        audio_config = speechsdk.audio.AudioOutputConfig(filename=filename)
 
         # Create a BytesIO object to store the synthesized audio
-        output_stream = io.BytesIO()
-        audio_config = speechsdk.audio.AudioOutputConfig(stream=output_stream)
+        # output_stream = io.BytesIO()
+        # audio_config = speechsdk.audio.AudioOutputConfig(stream=output_stream)
 
         speech_synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config, audio_config=audio_config
@@ -75,10 +75,8 @@ class AudioSynthesiser:
 
         # Checks result.
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            print("Speech synthesized to BytesIO for text [{}]".format(text))
-            # Reset the stream position to the beginning
-            output_stream.seek(0)
-            return output_stream
+            print("Speech synthesized and saved to {}".format(filename))
+
         else:
             print("Speech synthesis failed")
             return None
@@ -198,6 +196,8 @@ class AudioSynthesiser:
         # this timeout is for receiving new text
         timeout_length = INITIAL_TIMEOUT_LENGTH
         while True:
+            folder = Path("output") / "synthesized" / self.session_id
+            folder.mkdir(parents=True, exist_ok=True)
             try:
                 text = await asyncio.wait_for(
                     self.text_queue.get(), timeout=timeout_length
@@ -208,14 +208,12 @@ class AudioSynthesiser:
                 sentences = text_to_sentences(accumulated_text)
                 sentences = sentences.split("\n")
                 if len(sentences) > 1:
-                    if num_of_sentences == 0:
-                        folder = Path("output") / "synthesized" / self.session_id
-                        folder.mkdir(parents=True, exist_ok=True)
-                    num_of_sentences += 1
                     print(f"synthesising: {sentences[0]}")
+                    self.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
                     filename = folder / f"{num_of_sentences}.mp3"
                     self.speech_synthesis_to_mp3(sentences[0], str(filename.absolute()))
                     accumulated_text = sentences[1]
+                    num_of_sentences += 1
                 # wait for more text prior to timeout
                 else:
                     await asyncio.sleep(0.1)
@@ -225,9 +223,9 @@ class AudioSynthesiser:
                 # set a timeout, if the timeout is reached, then synthesise the rest of the text
                 if accumulated_text:
                     print(f"synthesizing final sentence: {accumulated_text}")
-                    num_of_sentences += 1
                     filename = folder / f"{num_of_sentences}.mp3"
                     self.speech_synthesis_to_mp3(sentences[0], str(filename.absolute()))
+                    self.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
                     # reset the loop
                     accumulated_text = ""
                     num_of_sentences = 0
@@ -256,23 +254,21 @@ class AudioSynthesiser:
 
 if __name__ == "__main__":
     audio_synthesiser = AudioSynthesiser()
-    filename = Path("output") / "synthesized" / (str(time.time()) + ".mp3")
-    absolute_path = os.path.abspath(filename)
-    audio_synthesiser.speech_synthesis_to_mp3("你好一二三", absolute_path)
+    # filename = Path("output") / "synthesized" / (str(time.time()) + ".mp3")
+    # absolute_path = os.path.abspath(filename)
+    # audio_synthesiser.speech_synthesis_to_mp3("你好一二三", absolute_path)
 
-    # async def run_dummy():
-    #     print(f"starting at {time.time()}")
-    #     audio_synthesiser = AudioSynthesiser()
-    #     audio_synthesiser.session_id = "test"
-    #     asyncio.create_task(audio_synthesiser.dummy_text_receiver())
-    #     asyncio.create_task(audio_synthesiser.process_text())
-    #     # continue to run until synthesis is complete
-    #     while True:
-    #         if audio_synthesiser.synthesis_complete:
-    #             print("SYNTHESIS COMPLETE")
-    #             break
-    #         await asyncio.sleep(0.1)
+    async def run_dummy():
+        print(f"starting at {time.time()}")
+        audio_synthesiser = AudioSynthesiser()
+        audio_synthesiser.session_id = "test"
+        asyncio.create_task(audio_synthesiser.dummy_text_receiver())
+        asyncio.create_task(audio_synthesiser.process_text())
+        # continue to run until synthesis is complete
+        while True:
+            if audio_synthesiser.synthesis_complete:
+                print("SYNTHESIS COMPLETE")
+                break
+            await asyncio.sleep(0.1)
 
-    #     audio_synthesiser.close()
-
-    # asyncio.run(run_dummy())
+    asyncio.run(run_dummy())
