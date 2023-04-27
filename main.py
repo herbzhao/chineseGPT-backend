@@ -180,6 +180,21 @@ async def text_to_speech_endpoint(
     }
 
 
+@app.websocket("/chat/audio_synthesise/check_new_mp3/{session_id}")
+async def check_new_mp3_ws(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    while True:
+        folder = f"output/synthesized/{session_id}"
+        if not os.path.exists(folder):
+            available_sentences = 0
+            await websocket.send_json({"available_sentences": available_sentences})
+        else:
+            files = os.listdir(folder)
+            available_sentences = len(files)
+            await websocket.send_json({"available_sentences": available_sentences})
+        await asyncio.sleep(0.5)
+
+
 @app.get("/chat/audio_synthesise/check_new_mp3")
 async def check_new_mp3(session_id: str = Depends(get_session_id)):
     # check the files in the directory
