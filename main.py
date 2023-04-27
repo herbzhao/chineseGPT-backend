@@ -158,7 +158,7 @@ async def text_to_speech(text: str, session_id: str):
 
 
 # receive text and save a mp3 file
-@app.post("/chat/stream/text_to_speech")
+@app.post("/chat/audio_synthesise/text_to_speech")
 async def text_to_speech_endpoint(
     background_tasks: BackgroundTasks,
     text: TextToSpeech,
@@ -180,20 +180,25 @@ async def text_to_speech_endpoint(
     }
 
 
+@app.get("/chat/audio_synthesise/check_new_mp3")
+async def check_new_mp3(session_id: str = Depends(get_session_id)):
+    # check the files in the directory
+    folder = f"output/synthesized/{session_id}"
+    if not os.path.exists(folder):
+        return {"available_sentences": 0}
+    else:
+        files = os.listdir(folder)
+        return {"available_sentences": len(files)}
+
+
 # automatically serve the newly generated mp3 file
-@app.get("/chat/stream/serve_synthesized_audio")
+@app.get("/chat/audio_synthesise/serve_mp3")
 async def mp3_stream(
     session_id: str = Depends(get_session_id), num_of_sentence: int = 0
 ):
     if session_id in app.state.synthesiser:
-        print("session id found")
         file_path = f"output/synthesized/{session_id}/{num_of_sentence}.mp3"
-        print(f"streaming file path: {file_path}")
-        if not os.path.exists(file_path):
-            print("file not found")
-            return {"error": "file not ready"}
-        print("streaming mp3 file")
-
+        print("streaming: ", file_path)
         return FileResponse(file_path, media_type="audio/mpeg")
 
 

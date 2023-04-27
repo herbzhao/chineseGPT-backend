@@ -38,7 +38,7 @@ class AudioSynthesiser:
         self.output_filename = ""
         self.session_id = None
 
-    def speech_synthesis_to_mp3(
+    async def speech_synthesis_to_mp3(
         self, text: str = "", filename: str = "", language: str = "zh-CN"
     ):
         """performs speech synthesis to mp3 file"""
@@ -71,7 +71,7 @@ class AudioSynthesiser:
             speech_config=speech_config, audio_config=audio_config
         )
         # Performs speech synthesis to mp3 file.
-        result = speech_synthesizer.speak_text_async(text).get()
+        result = speech_synthesizer.speak_text(text)
 
         # Checks result.
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
@@ -196,6 +196,7 @@ class AudioSynthesiser:
         # this timeout is for receiving new text
         timeout_length = INITIAL_TIMEOUT_LENGTH
         while True:
+            await asyncio.sleep(0.1)
             folder = Path("output") / "synthesized" / self.session_id
             folder.mkdir(parents=True, exist_ok=True)
             try:
@@ -210,21 +211,23 @@ class AudioSynthesiser:
                 if len(sentences) > 1:
                     print(f"synthesising: {sentences[0]}")
                     self.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
-                    filename = folder / f"{num_of_sentences}.mp3"
-                    self.speech_synthesis_to_mp3(sentences[0], str(filename.absolute()))
-                    accumulated_text = sentences[1]
                     num_of_sentences += 1
-                # wait for more text prior to timeout
-                else:
-                    await asyncio.sleep(0.1)
+                    filename = folder / f"{num_of_sentences}.mp3"
+                    await self.speech_synthesis_to_mp3(
+                        sentences[0], str(filename.absolute())
+                    )
+                    accumulated_text = sentences[1]
 
             # set a timeout, if the timeout is reached, then synthesise the rest of the text
             except asyncio.TimeoutError:
                 # set a timeout, if the timeout is reached, then synthesise the rest of the text
                 if accumulated_text:
                     print(f"synthesizing final sentence: {accumulated_text}")
+                    num_of_sentences += 1
                     filename = folder / f"{num_of_sentences}.mp3"
-                    self.speech_synthesis_to_mp3(sentences[0], str(filename.absolute()))
+                    await self.speech_synthesis_to_mp3(
+                        sentences[0], str(filename.absolute())
+                    )
                     self.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
                     # reset the loop
                     accumulated_text = ""
