@@ -15,7 +15,7 @@ HISTORY_MAX_TEXT = 100
 TRANSCRIBE_TIMEOUT_LENGTH = 1.5
 INITIAL_TIMEOUT_LENGTH = 3600
 # synthesise related
-DELIMITERS = ["。", "！", "？", "，", "。", ",", ".", "\n"]
+DELIMITERS = ["。", "！", "？", "，", "。", ",", "."]
 DELIMITERS_REGEX = "|".join(map(re.escape, DELIMITERS))
 # self.delimiters = "[！？。 . \n]"
 TEXT_RECEIVE_TIMEOUT_LENGTH = 0.5

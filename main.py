@@ -185,7 +185,7 @@ async def check_new_mp3_ws(websocket: WebSocket, session_id: str):
     while True:
         if app.state.synthesiser[session_id].audio_ready:
             await websocket.send_json({"status": "ready"})
-            websocket.close()
+            await websocket.close()
             break
         await asyncio.sleep(0.1)
 
@@ -224,8 +224,8 @@ async def mp3_stream(session_id: str = Depends(get_session_id)):
                 else:
                     time.sleep(0.5)  # Add delay between reads to reduce CPU usage
                     timeout_count += 1
-                if timeout_count > 5:
-                    print("breaking")
+                if app.state.synthesiser[session_id].synthesis_complete:
+                    app.state.synthesiser[session_id].stop_speech_synthesis()
                     break
 
         headers = {"Transfer-Encoding": "chunked", "X-Content-Type-Options": "nosniff"}
