@@ -17,6 +17,7 @@ from parameters import (
     INITIAL_TIMEOUT_LENGTH,
 )
 from uuid import uuid4
+from pathlib import Path
 
 load_dotenv()
 
@@ -147,14 +148,12 @@ async def text_to_speech(text: str, session_id: str):
     if session_id not in app.state.synthesiser:
         # if the session id is not in the dictionary, start the synthesiser
         app.state.synthesiser[session_id] = AudioSynthesiser()
-        audio_synthesiser = app.state.synthesiser[session_id]
-        audio_synthesiser.session_id = session_id
-        asyncio.create_task(audio_synthesiser.process_text())
-    else:
-        audio_synthesiser = app.state.synthesiser[session_id]
+        app.state.synthesiser[session_id].start_speech_synthesis_using_push_stream()
+        app.state.synthesiser[session_id].session_id = session_id
+        asyncio.create_task(app.state.synthesiser[session_id].process_text())
 
     # print(f"sending text to backend: {text}")
-    await audio_synthesiser.add_text(text)
+    await app.state.synthesiser[session_id].add_text(text)
 
 
 # receive text and save a mp3 file
@@ -184,15 +183,11 @@ async def text_to_speech_endpoint(
 async def check_new_mp3_ws(websocket: WebSocket, session_id: str):
     await websocket.accept()
     while True:
-        folder = f"output/synthesized/{session_id}"
-        if not os.path.exists(folder):
-            available_sentences = 0
-            await websocket.send_json({"available_sentences": available_sentences})
-        else:
-            files = os.listdir(folder)
-            available_sentences = len(files)
-            await websocket.send_json({"available_sentences": available_sentences})
-        await asyncio.sleep(0.5)
+        if app.state.synthesiser[session_id].audio_ready:
+            await websocket.send_json({"status": "ready"})
+            websocket.close()
+            break
+        await asyncio.sleep(0.1)
 
 
 @app.get("/chat/audio_synthesise/check_new_mp3")
@@ -208,13 +203,35 @@ async def check_new_mp3(session_id: str = Depends(get_session_id)):
 
 # automatically serve the newly generated mp3 file
 @app.get("/chat/audio_synthesise/serve_mp3")
-async def mp3_stream(
-    session_id: str = Depends(get_session_id), num_of_sentence: int = 0
-):
+async def mp3_stream(session_id: str = Depends(get_session_id)):
     if session_id in app.state.synthesiser:
-        file_path = f"output/synthesized/{session_id}/{num_of_sentence}.mp3"
-        print("streaming: ", file_path)
-        return FileResponse(file_path, media_type="audio/mpeg")
+        file_path = Path("output") / "synthesized" / f"{session_id}.mp3"
+
+        def generator_audio():
+            last_pos = 0
+            timeout_count = 0
+            while True:
+                audio_data = app.state.synthesiser[
+                    session_id
+                ].stream_callback.get_audio_data()
+                new_pos = len(audio_data)
+                if new_pos > last_pos:
+                    data = audio_data[last_pos:new_pos]
+                    if data:
+                        yield data
+                        timeout_count = 0
+                        last_pos = new_pos
+                else:
+                    time.sleep(0.5)  # Add delay between reads to reduce CPU usage
+                    timeout_count += 1
+                if timeout_count > 5:
+                    print("breaking")
+                    break
+
+        headers = {"Transfer-Encoding": "chunked", "X-Content-Type-Options": "nosniff"}
+        return StreamingResponse(
+            generator_audio(), media_type="audio/mpeg", headers=headers
+        )
 
 
 @app.websocket("/chat/stream/azureTranscript")

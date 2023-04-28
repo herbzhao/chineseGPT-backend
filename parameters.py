@@ -1,3 +1,5 @@
+import re
+
 # GPT related
 MODEL = "gpt-3.5-turbo-0301"
 accuracy_temperatures_map = {"low": 1, "medium": 0.5, "high": 0.2}
@@ -14,6 +16,7 @@ TRANSCRIBE_TIMEOUT_LENGTH = 1.5
 INITIAL_TIMEOUT_LENGTH = 3600
 # synthesise related
 DELIMITERS = ["。", "！", "？", "，", "。", ",", ".", "\n"]
+DELIMITERS_REGEX = "|".join(map(re.escape, DELIMITERS))
 # self.delimiters = "[！？。 . \n]"
 TEXT_RECEIVE_TIMEOUT_LENGTH = 0.5
 SYNTHESIS_TIMEOUT_LENGTH = 5

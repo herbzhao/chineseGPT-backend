@@ -12,7 +12,7 @@ import io
 import threading
 from parameters import (
     SYNTHESIS_TIMEOUT_LENGTH,
-    DELIMITERS,
+    DELIMITERS_REGEX,
     LANGUAGE_VOICE_MAP,
     INITIAL_TIMEOUT_LENGTH,
     TEXT_RECEIVE_TIMEOUT_LENGTH,
@@ -37,6 +37,8 @@ class AudioSynthesiser:
         self.text_queue = asyncio.Queue()
         self.output_filename = ""
         self.session_id = None
+        self.audio_ready = False
+        self.output_folder = Path("output") / "synthesized"
 
     async def speech_synthesis_to_mp3(
         self, text: str = "", filename: str = "", language: str = "zh-CN"
@@ -81,7 +83,7 @@ class AudioSynthesiser:
             print("Speech synthesis failed")
             return None
 
-    def speech_synthesis_to_push_audio_output_stream(self, language: str = "zh-CN"):
+    def start_speech_synthesis_using_push_stream(self, language: str = "zh-CN"):
         """performs speech synthesis and push audio output to a stream"""
 
         class PushAudioOutputStreamSampleCallback(
@@ -110,12 +112,12 @@ class AudioSynthesiser:
                 self._audio_data += audio_buffer
                 self.parent.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
                 # print("{} bytes received.".format(audio_buffer.nbytes))
-                filename = f"output/synthesized/audio_{self.parent.session_id}.mp3"
+                filename = self.parent.output_folder / f"{self.parent.session_id}.mp3"
                 # append the newly received audio data to the existing file
                 with open(filename, "ab") as f:
-                    print(f"Saving audio to {filename}")
+                    # print(f"Saving audio to {filename}")
                     f.write(audio_buffer)
-
+                self.parent.audio_ready = True
                 return audio_buffer.nbytes
 
             def close(self) -> None:
@@ -192,13 +194,11 @@ class AudioSynthesiser:
     async def process_text(self) -> None:
         """Process the text in the text queue and synthesise the text."""
         accumulated_text = ""
-        num_of_sentences = 0
+        synthesised_sentence = 0
         # this timeout is for receiving new text
         timeout_length = INITIAL_TIMEOUT_LENGTH
         while True:
             await asyncio.sleep(0.1)
-            folder = Path("output") / "synthesized" / self.session_id
-            folder.mkdir(parents=True, exist_ok=True)
             try:
                 text = await asyncio.wait_for(
                     self.text_queue.get(), timeout=timeout_length
@@ -206,32 +206,36 @@ class AudioSynthesiser:
                 timeout_length = TEXT_RECEIVE_TIMEOUT_LENGTH
                 # use bling fire to split the text into sentences
                 accumulated_text += text
-                sentences = text_to_sentences(accumulated_text)
-                sentences = sentences.split("\n")
-                if len(sentences) > 1:
-                    print(f"synthesising: {sentences[0]}")
+                # sentences = text_to_sentences(accumulated_text)
+                # sentences = sentences.split("\n")
+                sentences = self.split_text_to_sentences(accumulated_text)
+
+                if len(sentences) > synthesised_sentence + 1:
+                    print(f"synthesising: {sentences[synthesised_sentence]}")
                     self.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
-                    num_of_sentences += 1
-                    filename = folder / f"{num_of_sentences}.mp3"
-                    await self.speech_synthesis_to_mp3(
-                        sentences[0], str(filename.absolute())
+                    self.speech_synthesizer.speak_text_async(
+                        sentences[synthesised_sentence]
                     )
-                    accumulated_text = sentences[1]
+                    synthesised_sentence += 1
 
             # set a timeout, if the timeout is reached, then synthesise the rest of the text
             except asyncio.TimeoutError:
                 # set a timeout, if the timeout is reached, then synthesise the rest of the text
                 if accumulated_text:
-                    print(f"synthesizing final sentence: {accumulated_text}")
-                    num_of_sentences += 1
-                    filename = folder / f"{num_of_sentences}.mp3"
-                    await self.speech_synthesis_to_mp3(
-                        sentences[0], str(filename.absolute())
+                    sentences = self.split_text_to_sentences(accumulated_text)
+                    print(
+                        f"synthesizing final sentence: {sentences[synthesised_sentence]}"
                     )
-                    self.timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
+                    filename = self.output_folder / f"{synthesised_sentence}.mp3"
+                    # await self.speech_synthesis_to_mp3(
+                    #     sentences[synthesised_sentence], str(filename.absolute())
+                    # )
+                    self.speech_synthesizer.speak_text_async(
+                        sentences[synthesised_sentence]
+                    )
                     # reset the loop
                     accumulated_text = ""
-                    num_of_sentences = 0
+                    synthesised_sentence = 0
                     timeout_length = INITIAL_TIMEOUT_LENGTH
 
     async def dummy_text_receiver(self):
@@ -249,6 +253,19 @@ class AudioSynthesiser:
     def reset_timeout(self):
         """Reset the timeout at the start of each synthesis"""
         self.timeout = time.time() + INITIAL_TIMEOUT_LENGTH
+
+    def split_text_to_sentences(self, text):
+        """Split text into sentences using bling fire."""
+        sentences = re.split(DELIMITERS_REGEX, text)
+        # if the sentence is only a space or a number + ., then combine it with the previous sentence
+        for i, s in enumerate(sentences):
+            if len(s) <= 2:
+                if i < len(sentences) - 1:
+                    sentences[i + 1] = s + sentences[i + 1]
+                    sentences[i] = ""
+
+        sentences = [s for s in sentences if (s != "" and s != " ")]
+        return sentences
 
     @property
     def synthesis_complete(self):
