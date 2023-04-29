@@ -69,7 +69,7 @@ def chat(
     time_start = datetime.datetime.now()
     # https://platform.openai.com/docs/api-reference/chat/create
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=MODEL,
         messages=prompt_messages,
         temperature=accuracy_temperatures_map[accuracy],
         max_tokens=max_tokens,

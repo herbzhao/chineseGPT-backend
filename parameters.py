@@ -1,7 +1,7 @@
 import re
 
 # GPT related
-MODEL = "gpt-3.5-turbo-0301"
+MODEL = "gpt-4"
 accuracy_temperatures_map = {"low": 1, "medium": 0.5, "high": 0.2}
 system_prompts = {
     "personal assistant": "I want you to act as a personal assistant. I will provide you with questions related to daily lives.",
