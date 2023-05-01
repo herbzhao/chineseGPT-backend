@@ -1,20 +1,17 @@
-import os
-import azure.cognitiveservices.speech as speechsdk
-from dotenv import load_dotenv
-import time
-from pydub import AudioSegment
-import time
-import threading
-import wave
-from pathlib import Path
 import asyncio
 import io
-import threading
-from parameters import (
-    TRANSCRIBE_TIMEOUT_LENGTH,
-    INITIAL_TIMEOUT_LENGTH,
-)
+import os
 import re
+import threading
+import time
+import wave
+from pathlib import Path
+
+import azure.cognitiveservices.speech as speechsdk
+from dotenv import load_dotenv
+from pydub import AudioSegment
+
+from parameters import INITIAL_TIMEOUT_LENGTH, TRANSCRIBE_TIMEOUT_LENGTH
 
 
 class AudioTranscriber:

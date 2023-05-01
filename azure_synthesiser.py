@@ -1,24 +1,20 @@
-import os
-import azure.cognitiveservices.speech as speechsdk
-from dotenv import load_dotenv
-import time
-from pydub import AudioSegment
-import time
-import threading
-import wave
-from pathlib import Path
 import asyncio
 import io
-import threading
-from parameters import (
-    SYNTHESIS_TIMEOUT_LENGTH,
-    DELIMITERS_REGEX,
-    LANGUAGE_VOICE_MAP,
-    INITIAL_TIMEOUT_LENGTH,
-    TEXT_RECEIVE_TIMEOUT_LENGTH,
-)
+import os
 import re
+import threading
+import time
+import wave
+from pathlib import Path
+
+import azure.cognitiveservices.speech as speechsdk
 from blingfire import text_to_sentences
+from dotenv import load_dotenv
+from pydub import AudioSegment
+
+from parameters import (DELIMITERS_REGEX, INITIAL_TIMEOUT_LENGTH,
+                        LANGUAGE_VOICE_MAP, SYNTHESIS_TIMEOUT_LENGTH,
+                        TEXT_RECEIVE_TIMEOUT_LENGTH)
 
 
 class AudioSynthesiser:

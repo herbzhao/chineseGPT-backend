@@ -1,23 +1,30 @@
-from fastapi import FastAPI, WebSocket, Depends, BackgroundTasks
-from fastapi.responses import StreamingResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import os
-import time
-from backend_functions import chat
-from pydantic import BaseModel
-import uvicorn
-from azure_transcriber import AudioTranscriber
-from azure_synthesiser import AudioSynthesiser
 import asyncio
 import json
+import os
+import time
+from pathlib import Path
+from uuid import uuid4
+
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.security import OAuth2PasswordBearer
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
+from azure_synthesiser import AudioSynthesiser
+from azure_transcriber import AudioTranscriber
+from gpt_backends import chat
 from parameters import (
+    INITIAL_TIMEOUT_LENGTH,
     MP3_SENDING_CHUNK_SIZE,
     MP3_SENDING_TIMEOUT_LENGTH,
-    INITIAL_TIMEOUT_LENGTH,
 )
-from uuid import uuid4
-from pathlib import Path
+
+router = APIRouter()
+
 
 load_dotenv()
 
@@ -31,9 +38,13 @@ else:
 app = FastAPI()
 # set a default language on startup
 # cors: https://fastapi.tiangolo.com/tutorial/cors/
-frontend_url = os.getenv("FRONTEND_URL")
+frontend_url = []
+frontend_url.append(os.getenv("FRONTEND_URL"))
+frontend_url.append(os.getenv("FRONTEND_URL_NGROK"))
+frontend_url.append(os.getenv("FRONTEND_URL_PRODUCTION"))
+
 print("frontend_url: ", frontend_url)
-origins = [frontend_url, "https://gpt.tiandqian.com"]
+origins = frontend_url
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
