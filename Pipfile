@@ -25,6 +25,9 @@ noisereduce = "*"
 scipy = "*"
 azure-cognitiveservices-speech = "*"
 blingfire = "*"
+pymongo = "*"
+passlib = "*"
+isort = "*"
 
 [dev-packages]
 black = "*"
