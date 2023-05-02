@@ -28,6 +28,7 @@ blingfire = "*"
 pymongo = "*"
 passlib = "*"
 isort = "*"
+pyjwt = "*"
 
 [dev-packages]
 black = "*"

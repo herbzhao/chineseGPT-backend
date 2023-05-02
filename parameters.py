@@ -8,6 +8,10 @@ system_prompts = {
     "web app software architecture": " I want you to act as a software developer. I will provide some specific information about a web app requirements, and it will be your job to come up with an architecture and code for developing secure app.",
     "web app software developer": "I want you to act as a software developer. I will provide some specific information about a web app requirements, and it will be your job to write key part of codes",
 }
+# login related
+ACCESS_TOKEN_EXPIRE_MINUTES = 3600
+ENCODING_ALGORITHM = "HS256"
+ATLAS_URL = "cluster0.wh9yjkq.mongodb.net/?retryWrites=true&w=majority"
 
 # transcription related
 HISTORY_MAX_LENGTH = 10
