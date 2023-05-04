@@ -29,6 +29,7 @@ pymongo = "*"
 passlib = "*"
 isort = "*"
 pyjwt = "*"
+bcrypt = "*"
 
 [dev-packages]
 black = "*"

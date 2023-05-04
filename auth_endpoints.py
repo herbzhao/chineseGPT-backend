@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from pymongo.server_api import ServerApi
@@ -36,8 +36,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 class UserCreate(BaseModel):
-    username: str
-    password: str
+    username: EmailStr
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=20,
+        regex="^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,20}$",
+    )
 
 
 class UserLogin(BaseModel):
@@ -54,13 +59,11 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
-def verify_password(
-    plain_password: str, hashed_password: str, request: Request
-) -> bool:
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def get_password_hash(password: str, request: Request) -> str:
+def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
@@ -95,7 +98,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         )
 
 
-def authenticate_user(username: str, password: str, request: Request):
+def authenticate_user(username: str, password: str):
     user = users_collection.find_one({"username": username})
     if not user:
         return None
@@ -118,7 +121,9 @@ async def create_user(user: UserCreate, request: Request):
 
 @router.post("/token/", response_model=Token)
 async def login(user: UserLogin, request: Request):
+    print(user)
     db_user = authenticate_user(user.username, user.password)
+    print(db_user)
     if db_user is None:
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
