@@ -42,12 +42,13 @@ def check_connection(client):
         print(e)
 
 
-def creaet_users_collection(client):
+def create_users_collection(client):
     # Create a new client and connect to the server
     db = client["GPTian"]
     users_collection = db["users"]
     # Create unique index on the 'username' field
     users_collection.create_index([("username", ASCENDING)], unique=True)
+    return users_collection
 
 
 def get_users_collection(client):
@@ -81,7 +82,7 @@ def decoding_token(token: str):
     return jwt.decode(token, ENCODING_KEY, algorithms=[ENCODING_ALGORITHM])
 
 
-def authenticate_user(username: str, password: str):
+def authenticate_user(users_collection, username: str, password: str):
     user = users_collection.find_one({"username": username})
     if not user:
         return None

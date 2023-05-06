@@ -32,8 +32,6 @@ else:
 
 
 router = APIRouter()
-mongo_client = get_client()
-users_collection = get_users_collection(mongo_client)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
@@ -61,7 +59,7 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(users_collection, token: str = Depends(oauth2_scheme)):
     try:
         payload = decoding_token(token)
         username: str = payload.get("sub")
@@ -85,7 +83,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 async def create_user(user: UserCreate, request: Request):
     try:
         hashed_password = get_password_hash(user.password)
-        users_collection.insert_one(
+        request.app.state.users_collection.insert_one(
             {"username": user.username, "password": hashed_password}
         )
         access_token = create_access_token(data={"sub": user.username})
@@ -97,7 +95,9 @@ async def create_user(user: UserCreate, request: Request):
 
 @router.post("/login/", response_model=Token)
 async def login(user: UserLogin, request: Request):
-    db_user = authenticate_user(user.username, user.password)
+    db_user = authenticate_user(
+        request.app.state.users_collection, user.username, user.password
+    )
     if db_user is None:
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user.username})

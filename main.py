@@ -1,30 +1,16 @@
 import asyncio
 import json
 import os
-import time
-from pathlib import Path
-from uuid import uuid4
+
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, WebSocket
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.security import OAuth2PasswordBearer
-from passlib.context import CryptContext
-from pydantic import BaseModel
 
 import auth_endpoints
 import chat_endpoints
-from azure_synthesiser import AudioSynthesiser
-from azure_transcriber import AudioTranscriber
-from gpt_backends import chat
-from parameters import (
-    INITIAL_TIMEOUT_LENGTH,
-    MP3_SENDING_CHUNK_SIZE,
-    MP3_SENDING_TIMEOUT_LENGTH,
-)
-
+from mongo_access import get_client, get_users_collection
 
 load_dotenv()
 
@@ -38,6 +24,9 @@ else:
 app = FastAPI()
 app.include_router(auth_endpoints.router)
 app.include_router(chat_endpoints.router)
+
+app.state.mongo_client = get_client()
+app.state.users_collection = get_users_collection(app.state.mongo_client)
 
 # set a default language on startup
 # cors: https://fastapi.tiangolo.com/tutorial/cors/
