@@ -1,6 +1,7 @@
 import os
 
 from dotenv import load_dotenv
+from pymongo import ASCENDING
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 
@@ -33,8 +34,26 @@ def check_connection(client):
         print(e)
 
 
+def creaet_users_collection(client):
+    # Create a new client and connect to the server
+    db = client["GPTian"]
+    users_collection = db["users"]
+    # Create unique index on the 'username' field
+    users_collection.create_index([("username", ASCENDING)], unique=True)
+
+
 def get_users_collection(client):
     # Create a new client and connect to the server
     db = client["GPTian"]
     users_collection = db["users"]
+
     return users_collection
+
+
+mongo_client = get_client()
+
+users_collection = get_users_collection(mongo_client)
+users_collection.drop()
+creaet_users_collection(mongo_client)
+
+users_collection.insert_one({"username": "test@test.com", "password": "12345678"})

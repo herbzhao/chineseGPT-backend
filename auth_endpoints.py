@@ -107,6 +107,14 @@ def authenticate_user(username: str, password: str):
     return user
 
 
+def generate_access_token(username):
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": username}, expires_delta=access_token_expires
+    )
+    return access_token
+
+
 @router.post("/users/")
 async def create_user(user: UserCreate, request: Request):
     try:
@@ -114,20 +122,16 @@ async def create_user(user: UserCreate, request: Request):
         users_collection.insert_one(
             {"username": user.username, "password": hashed_password}
         )
-        return {"username": user.username}
+        access_token = generate_access_token(user.username)
+        return {"access_token": access_token, "token_type": "bearer"}
     except DuplicateKeyError:
         raise HTTPException(status_code=400, detail="Username already exists")
 
 
-@router.post("/token/", response_model=Token)
+@router.post("/login/", response_model=Token)
 async def login(user: UserLogin, request: Request):
-    print(user)
     db_user = authenticate_user(user.username, user.password)
-    print(db_user)
     if db_user is None:
         raise HTTPException(status_code=401, detail="Incorrect username or password")
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
+    access_token = generate_access_token(user.username)
     return {"access_token": access_token, "token_type": "bearer"}

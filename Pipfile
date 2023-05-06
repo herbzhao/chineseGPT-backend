@@ -30,6 +30,7 @@ passlib = "*"
 isort = "*"
 pyjwt = "*"
 bcrypt = "*"
+pydantic = {extras = ["email"], version = "*"}
 
 [dev-packages]
 black = "*"
