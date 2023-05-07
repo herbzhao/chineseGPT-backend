@@ -27,6 +27,7 @@ async def get_session_id(session_id: str = ""):
 class PromptRequest(BaseModel):
     prompt: str
     history: list[dict]
+    synthesise_switch: bool
 
 
 @router.post("/chat")
@@ -54,13 +55,13 @@ def send_response(prompt_request: PromptRequest) -> None:
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
     complete_response = ""
-    synthesise_answer = True
 
     while True:
         prompt_request = await websocket.receive_json()
         prompt_request = PromptRequest(**prompt_request)
         prompt = prompt_request.prompt
         history = prompt_request.history
+        synthesise_switch = prompt_request.synthesise_switch
         response = ""
         # print(f"Received prompt: {prompt}")
         # print(f"Received history: {history}")
@@ -75,7 +76,7 @@ async def chat_stream(websocket: WebSocket):
             session_id="test_api",
         )
         # print("got response generator")
-        if synthesise_answer:
+        if synthesise_switch:
             session_id = str(uuid4())
 
             await websocket.send_json(
