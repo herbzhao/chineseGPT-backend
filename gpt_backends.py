@@ -8,8 +8,13 @@ import openai
 import tiktoken
 from dotenv import load_dotenv
 
-from parameters import (HISTORY_MAX_LENGTH, HISTORY_MAX_TEXT, MODEL,
-                        accuracy_temperatures_map, system_prompts)
+from parameters import (
+    HISTORY_MAX_LENGTH,
+    HISTORY_MAX_TEXT,
+    MODEL,
+    accuracy_temperatures_map,
+    system_prompts,
+)
 
 load_dotenv()
 load_dotenv(".env.local")
@@ -62,6 +67,8 @@ def chat(
             {"role": "user", "content": prompt},
         ]
 
+    prompt_token_number = calculate_token_number(prompt_messages)
+
     time_start = datetime.datetime.now()
     # https://platform.openai.com/docs/api-reference/chat/create
     response = openai.ChatCompletion.create(
@@ -78,10 +85,10 @@ def chat(
     if not stream:
         response["role"] = response.choices[0].message.role
         response["content"] = response.choices[0].message.content
-        return response
+        return response, prompt_token_number
 
     if stream:
-        return response
+        return response, prompt_token_number
 
 
 def record_chat_history(
@@ -140,24 +147,40 @@ def calculate_token_number(messages, model=MODEL):
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
+        print("Warning: model not found. Using cl100k_base encoding.")
         encoding = tiktoken.get_encoding("cl100k_base")
-    if model == "gpt-3.5-turbo-0301":  # note: future models may deviate from this
-        num_tokens = 0
-        for message in messages:
-            num_tokens += (
-                4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
-            )
-            for key, value in message.items():
-                num_tokens += len(encoding.encode(value))
-                if key == "name":  # if there's a name, the role is omitted
-                    num_tokens += -1  # role is always required and always 1 token
-        num_tokens += 2  # every reply is primed with <im_start>assistant
-        return num_tokens
+
+    if model == "gpt-3.5-turbo":
+        # print(
+        #     "Warning: gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301."
+        # )
+        return calculate_token_number(messages, model="gpt-3.5-turbo-0301")
+    elif model == "gpt-4":
+        # print(
+        #     "Warning: gpt-4 may change over time. Returning num tokens assuming gpt-4-0314."
+        # )
+        return calculate_token_number(messages, model="gpt-4-0314")
+    elif model == "gpt-3.5-turbo" or model == "gpt-3.5-turbo-0301":
+        tokens_per_message = (
+            4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
+        )
+        tokens_per_name = -1  # if there's a name, the role is omitted
+    elif model == "gpt-4-0314" or model == "gpt-4":
+        tokens_per_message = 3
+        tokens_per_name = 1
     else:
         raise NotImplementedError(
-            f"""num_tokens_from_messages() is not presently implemented for model {model}.
-  See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
+            f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
         )
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+    return num_tokens
 
 
 def voice_to_text(
@@ -219,10 +242,23 @@ if __name__ == "__main__":
     #     stream=True,
     #     session_id="test",
     # )
-    audio_file = open(Path("resources/chunks/noise_reduced/segment0.webm"), "rb")
-    audio_file = open(Path("resources/chunks/Recording (11).webm"), "rb")
 
-    transcript = voice_to_text(audio_file, language="zh")
-    print(transcript)
-    # Whipser:测试一下测试一下a b c d e f g 作为一名AI语言模型 我无法为你制作具体的视频或音频片段 我的能力是根据输入的文本来生成自然语言响应
-    # AZURE: 测试一下测试一下ABCDEFG。作为一名AI语言模型，我无法为你制作具体的视频或音频片段。我的能力是根据输入的文本来生成自然语言响应。
+    # example_messages = [
+    #     {
+    #         "role": "system",
+    #         "content": "You are a helpful, pattern-following assistant that translates corporate jargon into plain English.",
+    #     },
+    #     {
+    #         "role": "system",
+    #         "name": "example_user",
+    #         "content": "New synergies will help drive top-line growth.",
+    #     },
+    #     {
+    #         "role": "system",
+    #         "name": "example_assistant",
+    #         "content": "Things working well together will increase revenue.",
+    #     },
+    # ]
+    # token_number = calculate_token_number(example_messages, model="gpt-4")
+    # print(token_number)
+    pass

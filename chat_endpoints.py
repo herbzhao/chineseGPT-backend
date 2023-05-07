@@ -6,19 +6,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    Request,
-    WebSocket,
-)
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, WebSocket
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from azure_synthesiser import AudioSynthesiser
 from azure_transcriber import AudioTranscriber
-from gpt_backends import chat
+from gpt_backends import chat, calculate_token_number
 
 router = APIRouter()
 synthesisers = {}
@@ -67,10 +61,11 @@ async def chat_stream(websocket: WebSocket):
         prompt_request = PromptRequest(**prompt_request)
         prompt = prompt_request.prompt
         history = prompt_request.history
+        response = ""
         # print(f"Received prompt: {prompt}")
         # print(f"Received history: {history}")
         # get generator data to client
-        response_generator = chat(
+        response_generator, prompt_token_number = chat(
             prompt=prompt,
             history=history,
             actor="personal assistant",
@@ -93,6 +88,7 @@ async def chat_stream(websocket: WebSocket):
                 try:
                     await text_to_speech(chunk_message.content, session_id)
                     await websocket.send_json({"content": chunk_message.content})
+                    response += chunk_message.content
                 except AttributeError:
                     pass
                 await asyncio.sleep(0.05)
@@ -101,11 +97,16 @@ async def chat_stream(websocket: WebSocket):
                 chunk_message = response_chunk["choices"][0]["delta"]
                 try:
                     await websocket.send_json({"content": chunk_message.content})
+                    response += chunk_message.content
                 except AttributeError:
                     pass
                 await asyncio.sleep(0.01)
 
-        await websocket.send_json({"command": "DONE"})
+        response_token_number = calculate_token_number(
+            [{"role": "assisstant", "content": response}]
+        )
+        used_credits = int((prompt_token_number + response_token_number) / 100)
+        await websocket.send_json({"command": "DONE", "usedCredits": used_credits})
 
 
 class TextToSpeech(BaseModel):

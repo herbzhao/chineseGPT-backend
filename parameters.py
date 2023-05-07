@@ -9,7 +9,7 @@ system_prompts = {
     "web app software developer": "I want you to act as a software developer. I will provide some specific information about a web app requirements, and it will be your job to write key part of codes",
 }
 # login related
-ACCESS_TOKEN_EXPIRE_MINUTES = 3600
+ACCESS_TOKEN_EXPIRE_MINUTES = 15  # 24 * 60 * 7
 ENCODING_ALGORITHM = "HS256"
 ATLAS_URL = "cluster0.wh9yjkq.mongodb.net/?retryWrites=true&w=majority"
 
