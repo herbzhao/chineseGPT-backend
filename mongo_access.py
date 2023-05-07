@@ -1,16 +1,15 @@
 import os
+from datetime import datetime, timedelta
+from typing import Optional, Union
 
+import jwt
 from dotenv import load_dotenv
+from passlib.context import CryptContext
 from pymongo import ASCENDING
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-from passlib.context import CryptContext
-from parameters import ATLAS_URL
-from typing import Optional
-from datetime import datetime, timedelta
-from parameters import ACCESS_TOKEN_EXPIRE_MINUTES, ENCODING_ALGORITHM
-import jwt
 
+from parameters import ACCESS_TOKEN_EXPIRE_MINUTES, ATLAS_URL, ENCODING_ALGORITHM
 
 load_dotenv()
 if os.path.exists(".env.local"):
@@ -34,12 +33,12 @@ def get_client():
     return client
 
 
-def check_connection(client):
-    try:
-        client.admin.command("ping")
-        print("Pinged your deployment. You successfully connected to MongoDB!")
-    except Exception as e:
-        print(e)
+def get_users_collection(client):
+    # Create a new client and connect to the server
+    db = client["GPTian"]
+    users_collection = db["users"]
+
+    return users_collection
 
 
 def create_users_collection(client):
@@ -51,12 +50,12 @@ def create_users_collection(client):
     return users_collection
 
 
-def get_users_collection(client):
-    # Create a new client and connect to the server
-    db = client["GPTian"]
-    users_collection = db["users"]
-
-    return users_collection
+def check_connection(client):
+    try:
+        client.admin.command("ping")
+        print("Pinged your deployment. You successfully connected to MongoDB!")
+    except Exception as e:
+        print(e)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -67,12 +66,11 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(
+    data: dict,
+):
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     access_token = jwt.encode(to_encode, ENCODING_KEY, algorithm=ENCODING_ALGORITHM)
     return access_token
@@ -91,8 +89,35 @@ def authenticate_user(users_collection, username: str, password: str):
     return user
 
 
+# Function to update remaining credits
+def update_credits(username: str, credits: int) -> Union[str, None]:
+    try:
+        result = users_collection.update_one(
+            {"username": username}, {"$set": {"credits": credits}}
+        )
+        if result.modified_count == 1:
+            return "Remaining credits updated successfully"
+        else:
+            return None
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+
+# Function to retrieve remaining credits
+def get_credits(username: str) -> Union[int, None]:
+    try:
+        user = users_collection.find_one({"username": username})
+        if user:
+            return user["credits"]
+        else:
+            return None
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+
 if __name__ == "__main__":
     mongo_client = get_client()
     users_collection = get_users_collection(mongo_client)
-    # users_collection.drop()
-    # creaet_users_collection(mongo_client)
+    print("done")

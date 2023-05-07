@@ -2,24 +2,22 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
+import jwt
 from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-import jwt
 from pydantic import BaseModel, EmailStr, Field
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from pymongo.server_api import ServerApi
-
+from datetime import datetime, timezone
 from mongo_access import (
-    get_client,
-    get_users_collection,
-    verify_password,
-    get_password_hash,
-    decoding_token,
     authenticate_user,
     create_access_token,
+    decoding_token,
+    get_password_hash,
+    update_credits,
 )
 
 load_dotenv()
@@ -32,7 +30,6 @@ else:
 
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 class UserCreate(BaseModel):
@@ -59,28 +56,8 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
-async def get_current_user(users_collection, token: str = Depends(oauth2_scheme)):
-    try:
-        payload = decoding_token(token)
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-            )
-        user = users_collection.find_one({"username": username})
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
-    except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-        )
-
-
-@router.post("/users/")
-async def create_user(user: UserCreate, request: Request):
+@router.post("/register/")
+async def register(user: UserCreate, request: Request):
     try:
         hashed_password = get_password_hash(user.password)
         request.app.state.users_collection.insert_one(
@@ -102,3 +79,75 @@ async def login(user: UserLogin, request: Request):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+# FastAPI uses the oauth2_scheme dependency to extract the token from the Authorization header.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+
+# extracted token is passed to the get_current_user function as the token argument.
+@router.post("/get_current_user/")
+async def get_current_user(
+    token: str = Depends(oauth2_scheme), request: Request = None
+):
+    try:
+        payload = decoding_token(token)
+
+        # Check if the token has expired
+        expiration = datetime.fromtimestamp(payload.get("exp"), timezone.utc)
+        if expiration < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+            )
+
+        # Check if the token is valid
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+            )
+
+        user = request.app.state.users_collection.find_one({"username": username})
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        )
+
+
+class UserCredits(BaseModel):
+    credits: int
+
+
+@router.get("/get_credits/", response_model=UserCredits)
+async def get_credits(current_user: dict = Depends(get_current_user)):
+    print(current_user)
+    user_credits = current_user.get("credits", 0)
+    return {"credits": user_credits}
+
+
+class EditCreditsInput(BaseModel):
+    credits_delta: int
+
+
+@router.post("/edit_credits/", response_model=UserCredits)
+async def edit_credits(
+    input_data: EditCreditsInput,
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    user_credits = current_user.get("credits", 0)
+    print(input_data)
+    user_credits += input_data.credits_delta
+    request.app.state.users_collection.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"credits": user_credits}},
+    )
+
+    return {"credits": user_credits}
