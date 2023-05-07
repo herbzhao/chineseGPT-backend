@@ -86,13 +86,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 # extracted token is passed to the get_current_user function as the token argument.
-@router.post("/get_current_user/")
 async def get_current_user(
     token: str = Depends(oauth2_scheme), request: Request = None
 ):
     try:
         payload = decoding_token(token)
-
         # Check if the token has expired
         expiration = datetime.fromtimestamp(payload.get("exp"), timezone.utc)
         if expiration < datetime.now(timezone.utc):
@@ -101,7 +99,6 @@ async def get_current_user(
                 detail="Token has expired",
             )
 
-        # Check if the token is valid
         username: str = payload.get("sub")
         if username is None:
             raise HTTPException(
@@ -121,13 +118,17 @@ async def get_current_user(
         )
 
 
+@router.get("/validate_token/")
+async def validate_token(current_user: dict = Depends(get_current_user)):
+    return {"valid": True}
+
+
 class UserCredits(BaseModel):
     credits: int
-
+ 
 
 @router.get("/get_credits/", response_model=UserCredits)
 async def get_credits(current_user: dict = Depends(get_current_user)):
-    print(current_user)
     user_credits = current_user.get("credits", 0)
     return {"credits": user_credits}
 

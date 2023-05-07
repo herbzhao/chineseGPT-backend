@@ -106,7 +106,7 @@ async def chat_stream(websocket: WebSocket):
         response_token_number = calculate_token_number(
             [{"role": "assisstant", "content": response}]
         )
-        used_credits = int((prompt_token_number + response_token_number) / 100)
+        used_credits = int((prompt_token_number + response_token_number) / 10)
         await websocket.send_json({"command": "DONE", "usedCredits": used_credits})
 
 
