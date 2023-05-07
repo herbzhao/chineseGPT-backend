@@ -28,6 +28,7 @@ def chat(
     max_tokens: int = 1024,
     accuracy: str = "medium",
     stream: bool = False,
+    model: str = MODEL,
     session_id: Optional[str] = None,
 ) -> str:
     """This function is used to send a user input to the OpenAI API and return a response.
@@ -72,7 +73,7 @@ def chat(
     time_start = datetime.datetime.now()
     # https://platform.openai.com/docs/api-reference/chat/create
     response = openai.ChatCompletion.create(
-        model=MODEL,
+        model=model,
         messages=prompt_messages,
         temperature=accuracy_temperatures_map[accuracy],
         max_tokens=max_tokens,

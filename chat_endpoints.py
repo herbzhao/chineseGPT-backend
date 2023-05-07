@@ -28,6 +28,7 @@ class PromptRequest(BaseModel):
     prompt: str
     history: list[dict]
     synthesise_switch: bool
+    gpt4_switch: bool
 
 
 @router.post("/chat")
@@ -62,10 +63,16 @@ async def chat_stream(websocket: WebSocket):
         prompt = prompt_request.prompt
         history = prompt_request.history
         synthesise_switch = prompt_request.synthesise_switch
+        gpt4_switch = prompt_request.gpt4_switch
         response = ""
         # print(f"Received prompt: {prompt}")
         # print(f"Received history: {history}")
         # get generator data to client
+        if gpt4_switch:
+            model = "gpt-4"
+        else:
+            model = "gpt-3.5-turbo"
+
         response_generator, prompt_token_number = chat(
             prompt=prompt,
             history=history,
@@ -73,8 +80,10 @@ async def chat_stream(websocket: WebSocket):
             max_tokens=500,
             accuracy="medium",
             stream=True,
+            model=model,
             session_id="test_api",
         )
+
         # print("got response generator")
         if synthesise_switch:
             session_id = str(uuid4())
