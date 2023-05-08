@@ -12,9 +12,13 @@ from blingfire import text_to_sentences
 from dotenv import load_dotenv
 from pydub import AudioSegment
 
-from parameters import (DELIMITERS_REGEX, INITIAL_TIMEOUT_LENGTH,
-                        LANGUAGE_VOICE_MAP, SYNTHESIS_TIMEOUT_LENGTH,
-                        TEXT_RECEIVE_TIMEOUT_LENGTH)
+from parameters import (
+    DELIMITERS_REGEX,
+    INITIAL_TIMEOUT_LENGTH,
+    LANGUAGE_VOICE_MAP,
+    SYNTHESIS_TIMEOUT_LENGTH,
+    TEXT_RECEIVE_TIMEOUT_LENGTH,
+)
 
 
 class AudioSynthesiser:
@@ -208,7 +212,7 @@ class AudioSynthesiser:
                 sentences = self.split_text_to_sentences(accumulated_text)
 
                 if len(sentences) > 1:
-                    print(f"synthesising: {sentences[0]}")
+                    # print(f"synthesising: {sentences[0]}")
                     self.speech_synthesizer.speak_text_async(sentences[0])
                     accumulated_text = "".join(sentences[1:])
 
@@ -216,7 +220,7 @@ class AudioSynthesiser:
             except asyncio.TimeoutError:
                 # set a timeout, if the timeout is reached, then synthesise the rest of the text
                 if accumulated_text:
-                    print(f"synthesizing final sentence: {accumulated_text}")
+                    # print(f"synthesizing final sentence: {accumulated_text}")
                     self.synthesis_timeout = time.time() + SYNTHESIS_TIMEOUT_LENGTH
                     self.speech_synthesizer.speak_text_async(accumulated_text)
                     # reset the loop
