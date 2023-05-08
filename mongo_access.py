@@ -116,11 +116,6 @@ def get_credits(username: str) -> Union[int, None]:
         print(f"Error: {e}")
         return None
 
- 
-def save_chat_history(client, user_id, chat_history):
-    users_collection = get_users_collection(client)
-    users_collection.update_one({"user_id": user_id}, {"$set": {"chat_history": chat_history}}, upsert=True)
-
 
 if __name__ == "__main__":
     mongo_client = get_client()

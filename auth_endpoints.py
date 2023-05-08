@@ -125,7 +125,7 @@ async def validate_token(current_user: dict = Depends(get_current_user)):
 
 class UserCredits(BaseModel):
     credits: int
- 
+
 
 @router.get("/get_credits/", response_model=UserCredits)
 async def get_credits(current_user: dict = Depends(get_current_user)):
@@ -152,3 +152,27 @@ async def edit_credits(
     )
 
     return {"credits": user_credits}
+
+
+@router.post("/save_history/")
+async def save_history(
+    history: dict,
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    # print(history)
+    request.app.state.users_collection.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"history": history["history"]}},
+    )
+    return {"success": True}
+
+
+@router.get("/load_history/")
+async def load_history(
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    user_history = current_user.get("history", [])
+    print(user_history)
+    return {"history": user_history}

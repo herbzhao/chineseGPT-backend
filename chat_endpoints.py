@@ -56,7 +56,6 @@ def send_response(prompt_request: PromptRequest) -> None:
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
     complete_response = ""
-
     while True:
         prompt_request = await websocket.receive_json()
         prompt_request = PromptRequest(**prompt_request)
@@ -115,7 +114,11 @@ async def chat_stream(websocket: WebSocket):
         response_token_number = calculate_token_number(
             [{"role": "assisstant", "content": response}]
         )
-        used_credits = int((prompt_token_number + response_token_number) / 10)
+        if gpt4_switch:
+            used_credits = (prompt_token_number + response_token_number) / 10
+        else:
+            used_credits = (prompt_token_number + response_token_number) / 100
+
         await websocket.send_json({"command": "DONE", "usedCredits": used_credits})
 
 

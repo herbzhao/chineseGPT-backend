@@ -57,6 +57,7 @@ def chat(
             # replace the key "author" with "role", and remove "loading" key
             message["role"] = message.pop("author")
             message.pop("loading")
+            message.pop("time")
 
         # add the system prompt to the history
         prompt_messages = history
