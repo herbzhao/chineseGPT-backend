@@ -174,5 +174,5 @@ async def load_history(
     request: Request = None,
 ):
     user_history = current_user.get("history", [])
-    print(user_history)
+    # print(user_history)
     return {"history": user_history}

@@ -55,6 +55,18 @@ def send_response(prompt_request: PromptRequest) -> None:
 @router.websocket("/chat/stream")
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
+
+    stop_stream = False
+
+    # a background task to listen for the stop command during the stream
+    async def listen_for_stop_command():
+        nonlocal stop_stream
+        while not stop_stream:
+            message = await websocket.receive_json()
+            if message.get("command") == "stop":
+                stop_stream = True
+                break
+
     complete_response = ""
     while True:
         prompt_request = await websocket.receive_json()
@@ -72,6 +84,8 @@ async def chat_stream(websocket: WebSocket):
         else:
             model = "gpt-3.5-turbo"
 
+        listener = asyncio.create_task(listen_for_stop_command())
+
         response_generator, prompt_token_number = chat(
             prompt=prompt,
             history=history,
@@ -86,30 +100,32 @@ async def chat_stream(websocket: WebSocket):
         # print("got response generator")
         if synthesise_switch:
             session_id = str(uuid4())
-
             await websocket.send_json(
                 {
                     "session_id": session_id,
                 }
             )
-            for response_chunk in response_generator:
-                chunk_message = response_chunk["choices"][0]["delta"]
-                try:
-                    await text_to_speech(chunk_message.content, session_id)
-                    await websocket.send_json({"content": chunk_message.content})
-                    response += chunk_message.content
-                except AttributeError:
-                    pass
-                await asyncio.sleep(0.05)
+            sleep_length = 0.05
         else:
-            for response_chunk in response_generator:
-                chunk_message = response_chunk["choices"][0]["delta"]
-                try:
-                    await websocket.send_json({"content": chunk_message.content})
-                    response += chunk_message.content
-                except AttributeError:
-                    pass
-                await asyncio.sleep(0.01)
+            sleep_length = 0.01
+
+        for response_chunk in response_generator:
+            chunk_message = response_chunk["choices"][0]["delta"]
+            if stop_stream:
+                break
+            try:
+                if synthesise_switch:
+                    await text_to_speech(chunk_message.content, session_id)
+                await websocket.send_json({"content": chunk_message.content})
+                response += chunk_message.content
+            except AttributeError:
+                pass
+
+            await asyncio.sleep(sleep_length)
+        
+        stop_stream = False
+        if not listener.done():
+            listener.cancel()
 
         response_token_number = calculate_token_number(
             [{"role": "assisstant", "content": response}]
