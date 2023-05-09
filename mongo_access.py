@@ -41,12 +41,35 @@ def get_users_collection(client):
     return users_collection
 
 
+def get_histories_collection(client):
+    # Create a new client and connect to the server
+    db = client["GPTian"]
+    histories_collection = db["histories"]
+    return histories_collection
+
+
 def create_users_collection(client):
     # Create a new client and connect to the server
     db = client["GPTian"]
     users_collection = db["users"]
     # Create unique index on the 'username' field
     users_collection.create_index([("username", ASCENDING)], unique=True)
+    return users_collection
+
+
+def create_histories_collection(client):
+    # Create a new client and connect to the server
+    db = client["GPTian"]
+    histories_collection = db["histories"]
+    # Create unique index
+    histories_collection.create_index("username")
+    histories_collection.create_index("last_updated")
+    histories_collection.create_index("creation_time")
+    # The compound index on username and creation_time
+    histories_collection.create_index(
+        [("username", ASCENDING), ("creation_time", ASCENDING)]
+    )
+
     return users_collection
 
 
@@ -120,4 +143,5 @@ def get_credits(username: str) -> Union[int, None]:
 if __name__ == "__main__":
     mongo_client = get_client()
     users_collection = get_users_collection(mongo_client)
+    create_histories_collection(mongo_client)
     print("done")

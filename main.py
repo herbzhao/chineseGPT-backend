@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import auth_endpoints
 import chat_endpoints
-from mongo_access import get_client, get_users_collection
+from mongo_access import get_client, get_users_collection, get_histories_collection
 
 load_dotenv()
 
@@ -26,6 +26,7 @@ app.include_router(chat_endpoints.router)
 
 app.state.mongo_client = get_client()
 app.state.users_collection = get_users_collection(app.state.mongo_client)
+app.state.histories_collection = get_histories_collection(app.state.mongo_client)
 
 # set a default language on startup
 # cors: https://fastapi.tiangolo.com/tutorial/cors/

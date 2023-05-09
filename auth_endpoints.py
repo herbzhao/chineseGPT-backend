@@ -3,14 +3,12 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import jwt
-from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
-from pymongo import MongoClient
+from pymongo import DESCENDING
 from pymongo.errors import DuplicateKeyError
-from pymongo.server_api import ServerApi
 from datetime import datetime, timezone
 from mongo_access import (
     authenticate_user,
@@ -19,6 +17,7 @@ from mongo_access import (
     get_password_hash,
     update_credits,
 )
+
 
 load_dotenv()
 if os.path.exists(".env.production") and os.getenv("ENVIRONMENT") == "production":
@@ -156,23 +155,82 @@ async def edit_credits(
 
 @router.post("/save_history/")
 async def save_history(
-    history: dict,
+    data: dict,
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    # print(history)
-    request.app.state.users_collection.update_one(
-        {"username": current_user["username"]},
-        {"$set": {"history": history["history"]}},
+    unique_id = (
+        current_user["username"] + "_" + data["history"][0]["time"].replace(".", "_")
     )
+
+    # Convert the creation time to a datetime object
+    creation_time = datetime.strptime(
+        data["history"][0]["time"], "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
+
+    new_history = {
+        "username": current_user["username"],
+        "messages": data["history"],
+        "creation_time": creation_time,  # new field
+        "last_updated": datetime.now(),
+        "uid": unique_id,  # new field
+    }
+
+    request.app.state.histories_collection.update_one(
+        {"uid": unique_id},
+        {"$set": new_history},
+        upsert=True,
+    )
+
     return {"success": True}
 
 
-@router.get("/load_history/")
+@router.get("/load_history_messages/")
+async def load_history(
+    uid: Optional[str] = None,  # new parameter for unique ID
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    if uid:
+        # If a unique ID is provided, return the specific chat history
+        history = request.app.state.histories_collection.find_one(
+            {"uid": uid}, {"_id": 0}
+        )
+    else:
+        # Get the unique ID of the most recently updated chat history
+        most_recent_chat = request.app.state.histories_collection.find_one(
+            {"username": current_user["username"]},
+            {"_id": 0},
+            sort=[("last_updated", DESCENDING)],
+        )
+        history = most_recent_chat if most_recent_chat else None
+
+    if history is not None:
+        return {"messages": history["messages"]}
+    else:
+        raise HTTPException(status_code=404, detail="No history found")
+
+
+@router.delete("/clear_histories/")
+async def clear_histories(
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    result = request.app.state.histories_collection.delete_many(
+        {"username": current_user["username"]}
+    )
+    return {"deleted_count": result.deleted_count}
+
+
+@router.get("/load_histories/")
 async def load_history(
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    user_history = current_user.get("history", [])
-    # print(user_history)
-    return {"history": user_history}
+    user = request.app.state.users_collection.find_one(
+        {"username": current_user["username"]}
+    )
+
+    # If no unique ID is provided, return all unique IDs
+    chat_history_uids = list(user.get("histories", {}).keys())
+    return {"history_uids": chat_history_uids}
