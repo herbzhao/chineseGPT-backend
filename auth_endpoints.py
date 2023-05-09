@@ -223,14 +223,18 @@ async def clear_histories(
 
 
 @router.get("/load_histories/")
-async def load_history(
+async def load_histories(
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    user = request.app.state.users_collection.find_one(
-        {"username": current_user["username"]}
+    histories = list(
+        request.app.state.histories_collection.find(
+            {"username": current_user["username"]},
+            {"_id": 0, "uid": 1, "last_updated": 1},
+        ).sort("last_updated", DESCENDING)
     )
 
-    # If no unique ID is provided, return all unique IDs
-    chat_history_uids = list(user.get("histories", {}).keys())
-    return {"history_uids": chat_history_uids}
+    if not histories:
+        raise HTTPException(status_code=404, detail="No history found")
+
+    return {"histories": histories}
