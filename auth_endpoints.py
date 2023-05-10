@@ -162,12 +162,10 @@ async def save_history(
     unique_id = (
         current_user["username"] + "_" + data["history"][0]["time"].replace(".", "_")
     )
-
     # Convert the creation time to a datetime object
     creation_time = datetime.strptime(
         data["history"][0]["time"], "%Y-%m-%dT%H:%M:%S.%fZ"
     )
-
     new_history = {
         "username": current_user["username"],
         "messages": data["history"],
@@ -176,11 +174,20 @@ async def save_history(
         "uid": unique_id,  # new field
     }
 
-    request.app.state.histories_collection.update_one(
-        {"uid": unique_id},
-        {"$set": new_history},
-        upsert=True,
+    # Retrieve the existing history, if any
+    existing_history = request.app.state.histories_collection.find_one(
+        {"uid": unique_id}
     )
+    # If there is no existing history or the messages have changed, update the history
+    if (
+        existing_history is None
+        or existing_history["messages"] != new_history["messages"]
+    ):
+        request.app.state.histories_collection.update_one(
+            {"uid": unique_id},
+            {"$set": new_history},
+            upsert=True,
+        )
 
     return {"success": True}
 
@@ -191,6 +198,7 @@ async def load_history(
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
+    print(uid)
     if uid:
         # If a unique ID is provided, return the specific chat history
         history = request.app.state.histories_collection.find_one(
