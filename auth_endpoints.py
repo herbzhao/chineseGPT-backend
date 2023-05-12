@@ -17,6 +17,7 @@ from mongo_access import (
     get_password_hash,
     update_credits,
 )
+from gpt_backends import chat, calculate_token_number
 
 
 load_dotenv()
@@ -166,12 +167,15 @@ async def save_history(
     creation_time = datetime.strptime(
         data["history"][0]["time"], "%Y-%m-%dT%H:%M:%S.%fZ"
     )
+    # use gpt3 to summarise the history into one sentence
+    summary = ""
     new_history = {
         "username": current_user["username"],
         "messages": data["history"],
         "creation_time": creation_time,  # new field
         "last_updated": datetime.now(),
         "uid": unique_id,  # new field
+        "summary": summary,
     }
 
     # Retrieve the existing history, if any
@@ -198,7 +202,6 @@ async def load_history(
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    print(uid)
     if uid:
         # If a unique ID is provided, return the specific chat history
         history = request.app.state.histories_collection.find_one(
@@ -216,11 +219,29 @@ async def load_history(
     if history is not None:
         return {"messages": history["messages"]}
     else:
-        raise HTTPException(status_code=404, detail="No history found")
+        raise {"messages": []}
 
 
-@router.delete("/clear_histories/")
-async def clear_histories(
+# return the summary of the histories for retrieval by the uid later using the load_history endpoint
+@router.get("/load_histories/")
+async def load_histories(
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    histories = list(
+        request.app.state.histories_collection.find(
+            {"username": current_user["username"]},
+            {"_id": 0, "uid": 1, "last_updated": 1, "summary": 1},
+        ).sort("last_updated", DESCENDING)
+    )
+
+    if not histories:
+        histories = []
+    return {"histories": histories}
+
+
+@router.delete("/delete_all_histories/")
+async def delete_all_histories(
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
@@ -230,19 +251,11 @@ async def clear_histories(
     return {"deleted_count": result.deleted_count}
 
 
-@router.get("/load_histories/")
-async def load_histories(
+@router.delete("/delete_history/")
+async def delete_history(
+    uid: str,
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    histories = list(
-        request.app.state.histories_collection.find(
-            {"username": current_user["username"]},
-            {"_id": 0, "uid": 1, "last_updated": 1},
-        ).sort("last_updated", DESCENDING)
-    )
-
-    if not histories:
-        raise HTTPException(status_code=404, detail="No history found")
-
-    return {"histories": histories}
+    result = request.app.state.histories_collection.delete_one({"uid": uid})
+    return {"deleted_count": result.deleted_count}

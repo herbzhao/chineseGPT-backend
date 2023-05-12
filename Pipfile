@@ -31,6 +31,7 @@ isort = "*"
 pyjwt = "*"
 bcrypt = "*"
 pydantic = {extras = ["email"], version = "*"}
+langchain = {extras = ["llms"], version = "*"}
 
 [dev-packages]
 black = "*"
