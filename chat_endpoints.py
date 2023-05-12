@@ -56,98 +56,69 @@ def send_response(prompt_request: PromptRequest) -> None:
 @router.websocket("/chat/stream")
 async def chat_stream(websocket: WebSocket):
     await websocket.accept()
-
-    stop_stream = False
-    prompt_request = None
-
-    async def message_handler():
-        nonlocal prompt_request
-        nonlocal stop_stream
+    while True:
         try:
-            while True:
-                message = await websocket.receive_json()
-                if message.get("command") == "stop":
-                    stop_stream = True
-                else:
-                    prompt_request = message
-        except websockets.WebSocketDisconnect:
-            stop_stream = True
-            print("WebSocket disconnected")
+            prompt_request = await websocket.receive_json()
+            prompt_request = PromptRequest(**prompt_request)
+            prompt = prompt_request.prompt
+            history = prompt_request.history
+            synthesise_switch = prompt_request.synthesise_switch
+            gpt4_switch = prompt_request.gpt4_switch
+            model = "gpt-4" if gpt4_switch else "gpt-3.5-turbo"
+            response_generator, prompt_token_number = chat(
+                prompt=prompt,
+                history=history,
+                actor="personal assistant",
+                max_tokens=500,
+                accuracy="medium",
+                stream=True,
+                model=model,
+                session_id="test_api",
+            )
 
-    message_handler_task = asyncio.create_task(message_handler())
-    try:
-        while True:
-            if not prompt_request:
-                await asyncio.sleep(0.2)
-            if prompt_request:
-                prompt_request = PromptRequest(**prompt_request)
-                prompt = prompt_request.prompt
-                history = prompt_request.history
-                synthesise_switch = prompt_request.synthesise_switch
-                gpt4_switch = prompt_request.gpt4_switch
-                response = ""
+            session_id = str(uuid4())
+            await websocket.send_json(
+                {
+                    "session_id": session_id,
+                }
+            )
+            sleep_length = 0.05 if synthesise_switch else 0.01
 
-                if gpt4_switch:
-                    model = "gpt-4"
-                else:
-                    model = "gpt-3.5-turbo"
-
-                response_generator, prompt_token_number = chat(
-                    prompt=prompt,
-                    history=history,
-                    actor="personal assistant",
-                    max_tokens=500,
-                    accuracy="medium",
-                    stream=True,
-                    model=model,
-                    session_id="test_api",
-                )
-
-                # print("got response generator")
-                if synthesise_switch:
-                    session_id = str(uuid4())
-                    await websocket.send_json(
-                        {
-                            "session_id": session_id,
-                        }
+            response = ""
+            for response_chunk in response_generator:
+                try:
+                    # wait for "stop" command or otherwise keep sending response
+                    message = await asyncio.wait_for(
+                        websocket.receive_json(), timeout=sleep_length
                     )
-                    sleep_length = 0.05
-                else:
-                    sleep_length = 0.01
-
-                for response_chunk in response_generator:
-                    chunk_message = response_chunk["choices"][0]["delta"]
-                    if stop_stream:
+                    if message.get("command") == "stop":
                         break
-                    try:
-                        if synthesise_switch:
-                            await text_to_speech(chunk_message.content, session_id)
+                except asyncio.TimeoutError:
+                    chunk_message = response_chunk["choices"][0]["delta"]
+                    if synthesise_switch:
+                        await text_to_speech(chunk_message.content, session_id)
+                    if hasattr(chunk_message, "content"):
                         await websocket.send_json({"content": chunk_message.content})
                         response += chunk_message.content
-                    except AttributeError:
-                        pass
 
-                    await asyncio.sleep(sleep_length)
+            response_token_number = calculate_token_number(
+                [{"role": "assisstant", "content": response}]
+            )
+            if gpt4_switch:
+                used_credits = (prompt_token_number + response_token_number) / 10
+            else:
+                used_credits = (prompt_token_number + response_token_number) / 100
 
-                # reset parameters
-                stop_stream = False
-                prompt_request = None
+            await websocket.send_json({"command": "DONE", "usedCredits": used_credits})
 
-                response_token_number = calculate_token_number(
-                    [{"role": "assisstant", "content": response}]
-                )
-                if gpt4_switch:
-                    used_credits = (prompt_token_number + response_token_number) / 10
-                else:
-                    used_credits = (prompt_token_number + response_token_number) / 100
+        except (websockets.WebSocketDisconnect, RuntimeError):
+            print("WebSocket disconnected")
+            break
 
-                await websocket.send_json(
-                    {"command": "DONE", "usedCredits": used_credits}
-                )
-    except asyncio.CancelledError:
-        print("chat_stream task cancelled")
-        message_handler_task.cancel()
-        await message_handler_task
+        except Exception as e:
+            # handle all other exceptions
+            print(f"An unexpected error occurred: {e}")
+            break
 
 
 class TextToSpeech(BaseModel):
