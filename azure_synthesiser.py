@@ -39,10 +39,9 @@ class AudioSynthesiser:
         self.session_id = None
         self.audio_ready = False
         self.output_folder = Path("output") / "synthesized"
+        self.language = "zh-CN"
 
-    async def speech_synthesis_to_mp3(
-        self, text: str = "", filename: str = "", language: str = "zh-CN"
-    ):
+    async def speech_synthesis_to_mp3(self, text: str = "", filename: str = ""):
         """performs speech synthesis to mp3 file"""
         # Creates an instance of a speech config with specified subscription key and service region.
         speech_config = speechsdk.SpeechConfig(
@@ -56,11 +55,11 @@ class AudioSynthesiser:
             speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
         )
 
-        if language in LANGUAGE_VOICE_MAP:
-            voice = LANGUAGE_VOICE_MAP[language]
+        if self.language in LANGUAGE_VOICE_MAP:
+            voice = LANGUAGE_VOICE_MAP[self.language]
             speech_config.speech_synthesis_voice_name = voice
         else:
-            speech_config.speech_synthesis_language = language
+            speech_config.speech_synthesis_language = self.language
 
         # save to mp3 file
         audio_config = speechsdk.audio.AudioOutputConfig(filename=filename)
@@ -83,7 +82,7 @@ class AudioSynthesiser:
             print("Speech synthesis failed")
             return None
 
-    def start_speech_synthesis_using_push_stream(self, language: str = "zh-CN"):
+    def start_speech_synthesis_using_push_stream(self):
         """performs speech synthesis and push audio output to a stream"""
 
         class PushAudioOutputStreamSampleCallback(
@@ -166,11 +165,11 @@ class AudioSynthesiser:
             speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
         )
 
-        if language in LANGUAGE_VOICE_MAP:
-            voice = LANGUAGE_VOICE_MAP[language]
+        if self.language in LANGUAGE_VOICE_MAP:
+            voice = LANGUAGE_VOICE_MAP[self.language]
             speech_config.speech_synthesis_voice_name = voice
         else:
-            speech_config.speech_synthesis_language = language
+            speech_config.speech_synthesis_language = self.language
 
         # Creates customized instance of PushAudioOutputStreamCallback
         self.stream_callback = PushAudioOutputStreamSampleCallback(parent=self)
