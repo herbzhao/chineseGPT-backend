@@ -32,24 +32,145 @@ class PromptRequest(BaseModel):
     gpt4_switch: bool
 
 
-@router.post("/chat")
-def send_response(prompt_request: PromptRequest) -> None:
-    prompt = prompt_request.prompt
-    history = prompt_request.history
-    print(f"Received prompt: {prompt}")
-    print(f"Received history: {history}")
-    print("not in streaming mode")
-    response_message = chat(
-        prompt=prompt,
-        history=history,
-        actor="personal assistant",
-        max_tokens=500,
-        accuracy="medium",
-        stream=False,
-        session_id="test_api",
-    )
-    print(f"response_message: {response_message}")
-    return {"content": response_message["content"], "author": "bot", "loading": False}
+async def text_to_speech(text: str, session_id: str):
+    if session_id not in synthesisers:
+        # if the session id is not in the dictionary, start the synthesiser
+        synthesisers[session_id] = AudioSynthesiser()
+        synthesisers[session_id].start_speech_synthesis_using_push_stream()
+        synthesisers[session_id].session_id = session_id
+        asyncio.create_task(synthesisers[session_id].process_text())
+
+    # print(f"sending text to backend: {text}")
+    await synthesisers[session_id].add_text(text)
+
+
+@router.websocket("/data_stream")
+async def data_stream(websocket: WebSocket):
+    # Start a background task to periodically check for new transcripts
+    async def prompt_handler(json_message):
+        prompt = json_message["prompt"]
+        history = json_message["history"]
+        synthesise_switch = json_message["synthesise_switch"]
+        sleep_length = 0.05 if synthesise_switch else 0.01
+        gpt4_switch = json_message["gpt4_switch"]
+        model = "gpt-4" if gpt4_switch else "gpt-3.5-turbo"
+
+        response_generator, prompt_token_number = chat(
+            prompt=prompt,
+            history=history,
+            actor="personal assistant",
+            max_tokens=500,
+            accuracy="medium",
+            stream=True,
+            model=model,
+            session_id=session_id,
+        )
+        response = ""
+        await websocket.send_json(
+            {
+                "session_id": session_id,
+            }
+        )
+        for response_chunk in response_generator:
+            try:
+                # wait for "stop" command or otherwise keep sending response
+                incoming_data = await asyncio.wait_for(
+                    websocket.receive_json(), timeout=sleep_length
+                )
+                if incoming_data.get("command") == "stop":
+                    break
+            except asyncio.TimeoutError:
+                chunk_message = response_chunk["choices"][0]["delta"]
+                if hasattr(chunk_message, "content"):
+                    if synthesise_switch:
+                        await text_to_speech(chunk_message.content, session_id)
+                    await websocket.send_json({"content": chunk_message.content})
+                    response += chunk_message.content
+
+            response_token_number = calculate_token_number(
+                [{"role": "assisstant", "content": response}]
+            )
+            if gpt4_switch:
+                used_credits = (prompt_token_number + response_token_number) / 10
+            else:
+                used_credits = (prompt_token_number + response_token_number) / 100
+
+        await websocket.send_json({"command": "DONE", "usedCredits": used_credits})
+
+    async def voice_chunk_handler(voice_chunk):
+        if audio_transcriber.transcription_complete:
+            await websocket.send_json({"command": "DONE"})
+            # reset the transcriber
+            audio_transcriber.reset_timeout()
+            audio_transcriber.transcripts = []
+
+        # Call the add_chunk method with the received voice_chunk
+        await audio_transcriber.add_chunk(voice_chunk)
+
+    async def transcribed_response_handler():
+        nonlocal sent_transcripts
+        while True:
+            transcripts = " ".join(audio_transcriber.transcripts)
+            if transcripts != sent_transcripts:
+                await websocket.send_json({"transcripts": transcripts})
+                sent_transcripts = transcripts
+            await asyncio.sleep(0.1)
+
+    await websocket.accept()
+    print("websocket connected")
+    audio_transcriber = await AudioTranscriber.create()
+    sent_transcripts = ""
+    print("start speech recognition")
+    # change this depending on whether encoding is mp3 or wav
+    asyncio.create_task(audio_transcriber.process_chunks_wav())
+    print("start processing audio chunks")
+    asyncio.create_task(transcribed_response_handler())
+    print("starting transcripts handler")
+    session_id = str(uuid4())
+
+    while True:
+        try:
+            incoming_data = await asyncio.wait_for(websocket.receive(), timeout=1)
+            print(incoming_data)
+            if "text" in incoming_data.keys():
+                json_message = json.loads(incoming_data["text"])
+                if "prompt" in json_message:
+                    await prompt_handler(json_message)
+
+                if "command" in json_message:
+                    if json_message["command"] == "STOP_ANSWERING":
+                        pass
+
+                if "command" in json_message:
+                    if json_message["command"] == "RESET":
+                        pass
+
+                if "language" in json_message:
+                    audio_transcriber.language = json_message["language"]
+                    print(f"Changed the language to: {audio_transcriber.language}")
+                    sent_transcripts = ""
+                    # Restart the speech recognizer
+                    await audio_transcriber.restart_speech_recognizer()
+
+            # transcribing incoming voice_chunks to text
+            elif "bytes" in incoming_data.keys():
+                voice_chunk = incoming_data["bytes"]
+                await voice_chunk_handler(voice_chunk)
+
+        except asyncio.TimeoutError:
+            if session_id in synthesisers:
+                if synthesisers[session_id].audio_ready:
+                    await websocket.send_json({"mp3_ready": session_id})
+
+        # handling exception for websocket disconnection for websocket.receive()
+        except (websockets.WebSocketDisconnect, RuntimeError):
+            print("WebSocket disconnected")
+            break
+
+        except Exception as e:
+            # handle all other exceptions
+            print(f"An unexpected error occurred: {e}")
+            break
 
 
 # https://www.starlette.io/websockets/
@@ -125,18 +246,6 @@ class TextToSpeech(BaseModel):
     text: str
 
 
-async def text_to_speech(text: str, session_id: str):
-    if session_id not in synthesisers:
-        # if the session id is not in the dictionary, start the synthesiser
-        synthesisers[session_id] = AudioSynthesiser()
-        synthesisers[session_id].start_speech_synthesis_using_push_stream()
-        synthesisers[session_id].session_id = session_id
-        asyncio.create_task(synthesisers[session_id].process_text())
-
-    # print(f"sending text to backend: {text}")
-    await synthesisers[session_id].add_text(text)
-
-
 # receive text and save a mp3 file
 @router.post("/chat/audio_synthesise/text_to_speech")
 async def text_to_speech_endpoint(
@@ -207,6 +316,7 @@ async def mp3_stream(
                     timeout_count += 1
                 if synthesisers[session_id].synthesis_complete:
                     synthesisers[session_id].stop_speech_synthesis()
+                    synthesisers[session_id] = None
                     break
 
         headers = {"Transfer-Encoding": "chunked", "X-Content-Type-Options": "nosniff"}
@@ -275,6 +385,7 @@ async def azure_transcript_stream(websocket: WebSocket):
         try:
             message = await websocket.receive()
             await handle_message(message)
+            await asyncio.sleep(0.1)
         except asyncio.TimeoutError:
             await asyncio.sleep(0.1)
         except RuntimeError:
