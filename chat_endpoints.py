@@ -95,9 +95,9 @@ async def chat_stream(websocket: WebSocket):
                         break
                 except asyncio.TimeoutError:
                     chunk_message = response_chunk["choices"][0]["delta"]
-                    if synthesise_switch:
-                        await text_to_speech(chunk_message.content, session_id)
                     if hasattr(chunk_message, "content"):
+                        if synthesise_switch:
+                            await text_to_speech(chunk_message.content, session_id)
                         await websocket.send_json({"content": chunk_message.content})
                         response += chunk_message.content
 
@@ -163,10 +163,11 @@ async def text_to_speech_endpoint(
 async def check_new_mp3_ws(websocket: WebSocket, session_id: str):
     await websocket.accept()
     while True:
-        if synthesisers[session_id].audio_ready:
-            await websocket.send_json({"status": "ready"})
-            await websocket.close()
-            break
+        if session_id in synthesisers:
+            if synthesisers[session_id].audio_ready:
+                await websocket.send_json({"status": "ready"})
+                await websocket.close()
+                break
         await asyncio.sleep(0.1)
 
 
@@ -216,13 +217,6 @@ async def mp3_stream(
 
 @router.websocket("/chat/stream/azureTranscript")
 async def azure_transcript_stream(websocket: WebSocket):
-    start_time = time.time()
-    await websocket.accept()
-    audio_transcriber = await AudioTranscriber.create()
-
-    sent_transcripts = ""
-    print("websocket connected")
-
     async def reset_transcriber():
         nonlocal sent_transcripts
         sent_transcripts = ""
@@ -241,6 +235,7 @@ async def azure_transcript_stream(websocket: WebSocket):
             await asyncio.sleep(0.1)
 
     async def handle_message(message):
+        # handle incoming data during transcription
         if "bytes" in message.keys():
             voice_chunk = message["bytes"]
             # Call the add_chunk method with the received voice_chunk
@@ -253,20 +248,31 @@ async def azure_transcript_stream(websocket: WebSocket):
             json_message = json.loads(message["text"])
             if "command" in json_message and json_message["command"] == "RESET":
                 await reset_transcriber()
-            elif "language" in json_message:
+            if "language" in json_message:
                 audio_transcriber.language = json_message["language"]
                 print(f"Changed the language to: {audio_transcriber.language}")
                 await reset_transcriber()
 
-    print("start processing chunks")
+    await websocket.accept()
+    print("websocket connected")
+
+    audio_transcriber = await AudioTranscriber.create()
+    sent_transcripts = ""
+    print("start speech recognition")
+
     # change this depending on whether encoding is mp3 or wav
     asyncio.create_task(audio_transcriber.process_chunks_wav())
-    print("starting transcripts handler")
+    print("start processing audio chunks")
+
     asyncio.create_task(transcripts_handler())
+    print("starting transcripts handler")
+
     while True:
         try:
             message = await websocket.receive()
             await handle_message(message)
         except asyncio.TimeoutError:
-            continue
-        await asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)
+        except RuntimeError:
+            print("WebSocket disconnected")
+            break

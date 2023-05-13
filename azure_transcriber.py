@@ -46,8 +46,12 @@ class AudioTranscriber:
         return self
 
     async def restart_speech_recognizer(self):
-        await self.close_session()
-        # Start a new speech recognizer
+        try:
+            await self.close_session()
+        except Exception as e:
+            print(e)
+        # Start a new speech recognizer after a short delay
+        await asyncio.sleep(1)
         await self.start_transcriber()
 
     def reset_timeout(self):

@@ -4,6 +4,17 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
+from langchain import OpenAI
+from langchain.chat_models import ChatOpenAI
+from langchain import PromptTemplate, LLMChain
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    AIMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+)
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
+
 import openai
 import tiktoken
 from dotenv import load_dotenv
@@ -233,34 +244,55 @@ async def voice_to_text_async(
     return transcript
 
 
-if __name__ == "__main__":
-    # prompt = "name 3 animals"
-    # response = chat(
-    #     prompt=prompt,
-    #     history=[],
-    #     actor="personal assistant",
-    #     max_tokens=200,
-    #     accuracy="medium",
-    #     stream=True,
-    #     session_id="test",
-    # )
+def chat_langchain(
+    prompt: list[str],
+    history: Optional[List[dict]],
+    actor: str = "personal assistant",
+    max_tokens: int = 1024,
+    accuracy: str = "medium",
+    stream: bool = False,
+    model: str = MODEL,
+    session_id: Optional[str] = None,
+) -> str:
+    chat = ChatOpenAI(
+        model_name=model,
+        temperature=accuracy_temperatures_map[accuracy],
+        streaming=stream,
+    )
+    # chat_result = chat.generate(prompt)
+    print(chat_result)
+    return chat_result
 
-    # example_messages = [
-    #     {
-    #         "role": "system",
-    #         "content": "You are a helpful, pattern-following assistant that translates corporate jargon into plain English.",
-    #     },
-    #     {
-    #         "role": "system",
-    #         "name": "example_user",
-    #         "content": "New synergies will help drive top-line growth.",
-    #     },
-    #     {
-    #         "role": "system",
-    #         "name": "example_assistant",
-    #         "content": "Things working well together will increase revenue.",
-    #     },
-    # ]
-    # token_number = calculate_token_number(example_messages, model="gpt-4")
-    # print(token_number)
-    pass
+
+if __name__ == "__main__":
+    example_messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful, pattern-following assistant that translates corporate jargon into plain English.",
+        },
+        {
+            "role": "system",
+            "name": "example_user",
+            "content": "New synergies will help drive top-line growth.",
+        },
+        {
+            "role": "system",
+            "name": "example_assistant",
+            "content": "Things working well together will increase revenue.",
+        },
+    ]
+    example_messages = [
+        [
+            SystemMessage(
+                content="You are a helpful assistant that translates English to French."
+            ),
+            HumanMessage(
+                content="Translate this sentence from English to French. I love programming."
+            ),
+        ]
+    ]
+
+    prompt = ["hello how are you?"]
+
+    chat_result = chat_langchain(prompt=example_messages, history=[])
+    print(chat_result.llm_output)
