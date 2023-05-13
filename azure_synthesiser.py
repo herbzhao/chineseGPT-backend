@@ -243,8 +243,8 @@ class AudioSynthesiser:
         """Reset the timeout at the start of each synthesis"""
         self.synthesis_timeout = time.time() + INITIAL_TIMEOUT_LENGTH
 
-    def split_text_to_sentences(self, text):
-        """Split text into sentences using bling fire."""
+    def split_text_to_sentences_delimiters(self, text):
+        """Split text into sentences using delimiters."""
         DELIMITERS = ["。", "！", "？", "，", "。", ",", "."]
         DELIMITERS_REGEX = "|".join(map(re.escape, DELIMITERS))
         text = text.replace("\n", "")
@@ -261,6 +261,13 @@ class AudioSynthesiser:
         # Add the remaining part of the text, if any
         if last_pos < len(text):
             sentences.append(text[last_pos:])
+
+        return sentences
+
+    def split_text_to_sentences(self, text):
+        """Split text into sentences using blingfire."""
+        text = text.replace("\n", "")
+        sentences = text_to_sentences(text).split("\n")
 
         return sentences
 
