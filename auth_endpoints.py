@@ -120,7 +120,8 @@ async def get_current_user(
 
 @router.get("/validate_token/")
 async def validate_token(current_user: dict = Depends(get_current_user)):
-    return {"valid": True}
+    # return username if token is valid
+    return {"username": current_user["username"]}
 
 
 class UserCredits(BaseModel):
