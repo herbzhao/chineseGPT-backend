@@ -100,9 +100,7 @@ class AudioTranscriber:
     async def process_chunks_wav(self):
         while True:
             chunk = await self.chunks_queue.get()
-
             self.push_stream.write(chunk)
-
             await asyncio.sleep(0.1)
 
     async def start_transcriber(self):
@@ -197,12 +195,14 @@ if __name__ == "__main__":
         print(f"starting at {time.time()}")
         sent_transcripts = ""
         audio_transcriber = await AudioTranscriber.create()
-        asyncio.create_task(audio_transcriber.dummy_chunks_receiver("resources/chunks"))
-        asyncio.create_task(audio_transcriber.process_chunks())
+        asyncio.create_task(audio_transcriber.dummy_chunks_receiver("resources/test"))
+        asyncio.create_task(audio_transcriber.process_chunks_wav())
         while True:
             await asyncio.sleep(0.01)
             transcripts = " ".join(audio_transcriber.transcripts)
+            print(audio_transcriber.transcripts)
             if transcripts != sent_transcripts:
                 sent_transcripts = transcripts
+                print(f"{time.time()}: sent {sent_transcripts}")
 
     asyncio.run(run_dummy())

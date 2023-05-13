@@ -220,7 +220,7 @@ async def load_history(
     if history is not None:
         return {"messages": history["messages"]}
     else:
-        raise {"messages": []}
+        return {"messages": []}
 
 
 # return the summary of the histories for retrieval by the uid later using the load_history endpoint
@@ -252,7 +252,7 @@ async def delete_all_histories(
     return {"deleted_count": result.deleted_count}
 
 
-@router.delete("/delete_history/")
+@router.delete("/delete_history/{uid}")
 async def delete_history(
     uid: str,
     current_user: dict = Depends(get_current_user),
