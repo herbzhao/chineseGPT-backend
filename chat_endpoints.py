@@ -235,6 +235,7 @@ async def azure_transcript_stream(websocket: WebSocket):
             await asyncio.sleep(0.1)
 
     async def handle_message(message):
+        nonlocal sent_transcripts
         # handle incoming data during transcription
         if "bytes" in message.keys():
             voice_chunk = message["bytes"]
@@ -243,11 +244,14 @@ async def azure_transcript_stream(websocket: WebSocket):
             # print(f"{time.time() - start_time}: added chunk")
             if audio_transcriber.transcription_complete:
                 await websocket.send_json({"command": "DONE"})
+                # reset the transcriber
+                audio_transcriber.reset_timeout()
+                audio_transcriber.transcripts = []
 
         elif "text" in message.keys():
             json_message = json.loads(message["text"])
-            if "command" in json_message and json_message["command"] == "RESET":
-                await reset_transcriber()
+            # if "command" in json_message and json_message["command"] == "RESET":
+            #     await reset_transcriber()
             if "language" in json_message:
                 audio_transcriber.language = json_message["language"]
                 print(f"Changed the language to: {audio_transcriber.language}")
@@ -275,4 +279,5 @@ async def azure_transcript_stream(websocket: WebSocket):
             await asyncio.sleep(0.1)
         except RuntimeError:
             print("WebSocket disconnected")
+            audio_transcriber.close_session()
             break

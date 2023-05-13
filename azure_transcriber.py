@@ -138,21 +138,22 @@ class AudioTranscriber:
             lambda evt: print("CANCELED {}".format(evt))
         )
 
-        asyncio.create_task(self.transcribe_async())
-
-    async def transcribe_async(self):
-        # Start continuous recognition
         self.speech_recognizer.start_continuous_recognition()
+        # asyncio.create_task(self.transcribe_async())
 
-        # loop serves as a mechanism to keep the program running while it's waiting for more audio chunks
-        # and transcriptions. The timeout value is updated in the recognizing_callback function,
-        #  This means that the loop will keep running until there's no new transcription received within the self.timeout_diff duration.
-        while not self.transcription_complete:
-            await asyncio.sleep(0.01)
+    # async def transcribe_async(self):
+    # Start continuous recognition
+    # self.speech_recognizer.start_continuous_recognition()
 
-        if self.transcription_complete:
-            self.speech_recognizer.stop_continuous_recognition()
-            self.push_stream.close()
+    # loop serves as a mechanism to keep the program running while it's waiting for more audio chunks
+    # and transcriptions. The timeout value is updated in the recognizing_callback function,
+    #  This means that the loop will keep running until there's no new transcription received within the self.timeout_diff duration.
+    # while not self.transcription_complete:
+    # await asyncio.sleep(0.05)
+
+    # if self.transcription_complete:
+    # self.speech_recognizer.stop_continuous_recognition()
+    # self.push_stream.close()
 
     async def add_chunk(self, chunk):
         await self.chunks_queue.put(chunk)
