@@ -113,11 +113,13 @@ async def data_stream(websocket: WebSocket):
             if synthesise_switch:
                 used_credits += response_token_number / 10
 
-        await websocket.send_json({"command": "DONE", "usedCredits": used_credits})
+        await websocket.send_json(
+            {"command": "Answering complete", "usedCredits": used_credits}
+        )
 
     async def voice_chunk_handler(voice_chunk):
         if audio_transcriber.transcription_complete:
-            await websocket.send_json({"command": "DONE"})
+            await websocket.send_json({"command": "Transcription complete"})
             # reset the transcriber
             audio_transcriber.reset_timeout()
             audio_transcriber.transcripts = []

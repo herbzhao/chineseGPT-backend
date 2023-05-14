@@ -161,6 +161,9 @@ async def save_history(
     current_user: dict = Depends(get_current_user),
     request: Request = None,
 ):
+    if not data["history"]:
+        return {"success": "no messages to save"}
+
     unique_id = (
         current_user["username"] + "_" + data["history"][0]["time"].replace(".", "_")
     )

@@ -266,9 +266,14 @@ class AudioSynthesiser:
 
     def split_text_to_sentences(self, text):
         """Split text into sentences using blingfire."""
-        text = text.replace("\n", "")
-        sentences = text_to_sentences(text).split("\n")
-
+        # first split text using line breaks
+        sentences = text.split("\n")
+        # then split each sentence using blingfire
+        sentences = [text_to_sentences(sentence).split("\n") for sentence in sentences]
+        # flatten list
+        sentences = [item for sublist in sentences for item in sublist]
+        # remove empty strings
+        sentences = [sentence for sentence in sentences if sentence]
         return sentences
 
     @property
