@@ -9,7 +9,8 @@ from pymongo import ASCENDING
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 
-from parameters import ACCESS_TOKEN_EXPIRE_MINUTES, ATLAS_URL, ENCODING_ALGORITHM
+from parameters import (ACCESS_TOKEN_EXPIRE_MINUTES, ATLAS_URL,
+                        ENCODING_ALGORITHM)
 
 load_dotenv()
 if os.path.exists(".env.local"):

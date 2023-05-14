@@ -3,7 +3,7 @@ import re
 # GPT related
 # MODEL = "gpt-4"
 MODEL = "gpt-3.5-turbo"
-accuracy_temperatures_map = {"low": 1, "medium": 0.5, "high": 0.2}
+ACCURACY_TEMPERATURE_MAP = {"low": 1, "medium": 0.5, "high": 0.2}
 system_prompts = {
     "personal assistant": "I want you to act as a personal assistant. I will provide you with questions related to daily lives.",
     "web app software architecture": " I want you to act as a software developer. I will provide some specific information about a web app requirements, and it will be your job to come up with an architecture and code for developing secure app.",

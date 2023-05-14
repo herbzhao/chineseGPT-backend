@@ -6,14 +6,14 @@ from pathlib import Path
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, WebSocket
-from fastapi import websockets
+from fastapi import (APIRouter, BackgroundTasks, Depends, Request, WebSocket,
+                     websockets)
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from azure_synthesiser import AudioSynthesiser
 from azure_transcriber import AudioTranscriber
-from gpt_backends import chat, calculate_token_number
+from gpt_backends import calculate_token_number, chat
 
 router = APIRouter()
 synthesisers = {}

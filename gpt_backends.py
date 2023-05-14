@@ -4,26 +4,25 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from langchain import OpenAI
-from langchain.chat_models import ChatOpenAI
-from langchain import PromptTemplate, LLMChain
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    AIMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-)
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
-
 import openai
 import tiktoken
 from dotenv import load_dotenv
+from langchain import LLMChain, OpenAI, PromptTemplate
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts.chat import (
+    AIMessagePromptTemplate,
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+)
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
 from parameters import (
     HISTORY_MAX_LENGTH,
     HISTORY_MAX_TEXT,
     MODEL,
-    accuracy_temperatures_map,
+    ACCURACY_TEMPERATURE_MAP,
     system_prompts,
 )
 
@@ -87,7 +86,7 @@ def chat(
     response = openai.ChatCompletion.create(
         model=model,
         messages=prompt_messages,
-        temperature=accuracy_temperatures_map[accuracy],
+        temperature=ACCURACY_TEMPERATURE_MAP[accuracy],
         max_tokens=max_tokens,
         top_p=1,
         frequency_penalty=0,
@@ -213,7 +212,7 @@ def voice_to_text(
     transcript = openai.Audio.transcribe(
         model="whisper-1",
         file=audio_file,
-        temperature=accuracy_temperatures_map[accuracy],
+        temperature=ACCURACY_TEMPERATURE_MAP[accuracy],
         language=language,
     )["text"]
 
@@ -237,7 +236,7 @@ async def voice_to_text_async(
     transcript = openai.Audio.transcribe(
         model="whisper-1",
         file=audio_file,
-        temperature=accuracy_temperatures_map[accuracy],
+        temperature=ACCURACY_TEMPERATURE_MAP[accuracy],
         language=language,
     )["text"]
 
@@ -250,15 +249,21 @@ def chat_langchain(
     actor: str = "personal assistant",
     max_tokens: int = 1024,
     accuracy: str = "medium",
-    stream: bool = False,
+    stream: bool = True,
     model: str = MODEL,
     session_id: Optional[str] = None,
 ) -> str:
     chat = ChatOpenAI(
         model_name=model,
-        temperature=accuracy_temperatures_map[accuracy],
+        temperature=ACCURACY_TEMPERATURE_MAP[accuracy],
         streaming=stream,
+        callbacks=[StreamingStdOutCallbackHandler()],
     )
+    if stream:
+        resp = chat([HumanMessage(content="write me number 1 - 20")])
+
+    print(resp)
+    print()
     # chat_result = chat.generate(prompt)
     print(chat_result)
     return chat_result

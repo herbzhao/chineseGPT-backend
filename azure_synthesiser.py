@@ -12,13 +12,9 @@ from blingfire import text_to_sentences
 from dotenv import load_dotenv
 from pydub import AudioSegment
 
-from parameters import (
-    DELIMITERS_REGEX,
-    INITIAL_TIMEOUT_LENGTH,
-    LANGUAGE_VOICE_MAP,
-    SYNTHESIS_TIMEOUT_LENGTH,
-    TEXT_RECEIVE_TIMEOUT_LENGTH,
-)
+from parameters import (DELIMITERS_REGEX, INITIAL_TIMEOUT_LENGTH,
+                        LANGUAGE_VOICE_MAP, SYNTHESIS_TIMEOUT_LENGTH,
+                        TEXT_RECEIVE_TIMEOUT_LENGTH)
 
 
 class AudioSynthesiser:

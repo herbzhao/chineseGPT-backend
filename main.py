@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import auth_endpoints
 import chat_endpoints
-from mongo_access import get_client, get_users_collection, get_histories_collection
+from mongo_access import (get_client, get_histories_collection,
+                          get_users_collection)
 
 load_dotenv()
 

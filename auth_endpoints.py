@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
@@ -9,16 +9,10 @@ from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
 from pymongo import DESCENDING
 from pymongo.errors import DuplicateKeyError
-from datetime import datetime, timezone
-from mongo_access import (
-    authenticate_user,
-    create_access_token,
-    decoding_token,
-    get_password_hash,
-    update_credits,
-)
-from gpt_backends import chat, calculate_token_number
 
+from gpt_backends import calculate_token_number, chat
+from mongo_access import (authenticate_user, create_access_token,
+                          decoding_token, get_password_hash, update_credits)
 
 load_dotenv()
 if os.path.exists(".env.production") and os.getenv("ENVIRONMENT") == "production":
