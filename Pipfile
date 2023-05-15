@@ -32,6 +32,7 @@ pyjwt = "*"
 bcrypt = "*"
 pydantic = {extras = ["email"], version = "*"}
 langchain = {extras = ["llms"], version = "*"}
+chromadb = "*"
 
 [dev-packages]
 black = "*"
