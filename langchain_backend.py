@@ -2,46 +2,59 @@
 import asyncio
 import datetime
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import time
-
 
 import openai
 import tiktoken
 from dotenv import load_dotenv
-from langchain import (
-    OpenAI,
-    PromptTemplate,
-)
-from langchain.chains import SequentialChain, LLMChain, ConversationChain
+from langchain import OpenAI, PromptTemplate
 from langchain.callbacks.base import AsyncCallbackHandler, BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chat_models import ChatOpenAI
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    PromptTemplate,
-    SystemMessagePromptTemplate,
-    AIMessagePromptTemplate,
-    HumanMessagePromptTemplate,
+from langchain.chains import (
+    ConversationChain,
+    LLMChain,
+    RetrievalQA,
+    SequentialChain,
+    ConversationalRetrievalChain,
 )
+from langchain.chat_models import ChatOpenAI
+from langchain.document_loaders import BSHTMLLoader, PyPDFLoader, TextLoader
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.indexes import VectorstoreIndexCreator
 from langchain.memory import (
     ChatMessageHistory,
-    ConversationBufferMemory,
-    SimpleMemory,
-    ConversationSummaryMemory,
     CombinedMemory,
+    ConversationBufferMemory,
     ConversationBufferWindowMemory,
     ConversationSummaryBufferMemory,
+    ConversationSummaryMemory,
+    SimpleMemory,
 )
 
+from langchain.agents import load_tools, initialize_agent, AgentType
+from langchain.prompts.chat import (
+    AIMessagePromptTemplate,
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    PromptTemplate,
+    SystemMessagePromptTemplate,
+)
 from langchain.schema import AIMessage, HumanMessage, LLMResult, SystemMessage
+from langchain.text_splitter import (
+    CharacterTextSplitter,
+    RecursiveCharacterTextSplitter,
+    TokenTextSplitter,
+)
+from langchain.vectorstores import FAISS, Chroma, Pinecone
 from pydantic import BaseModel, validator
+
 from parameters import (
+    ACCURACY_TEMPERATURE_MAP,
     HISTORY_MAX_LENGTH,
     HISTORY_MAX_TEXT,
     MODEL,
-    ACCURACY_TEMPERATURE_MAP,
     system_prompts,
 )
 
@@ -83,65 +96,97 @@ def create_chat(
     return chat
 
 
-chat = create_chat()
-conv_window_memory = ConversationBufferWindowMemory(
-    memory_key="chat_history_lines", input_key="input", k=1, return_messages=True
-)
-# """
-# Recent conversations:
-# {chat_history_lines}
-# """
+def use_vector_store():
+    chat = create_chat()
+    loader = TextLoader("resources\example.txt", encoding="utf8")
+    # loader = PyPDFLoader("resources\gpt4_explain.pdf")
+    # loader = BSHTMLLoader("resources\gpt4_explain.html", open_encoding="utf8")
 
-summary_memory = ConversationSummaryMemory(
-    llm=chat, input_key="input", memory_key="summary"
-)
-# """
-# summary of conversation:
-# {summary}
-# """
+    documents = loader.load()
 
-combined_memory = CombinedMemory(memories=[conv_window_memory, summary_memory])
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=0)
+    texts = text_splitter.split_documents(documents)
+    embeddings = OpenAIEmbeddings()
+    db = FAISS.from_documents(texts, embeddings)
 
-conv_summary_buffer = ConversationSummaryBufferMemory(
-    llm=chat, max_token_limit=40, memory_key="summary"
-)
-# """
-# summary of conversation:
-# {summary}
-# """
+    # do a similarity search on the database - returns a list of documents that are similar to a given query
+    query = "who discovered whispering gallery mode?"
+    docs = db.similarity_search(query)
+    print(docs)
+
+    # actually use it in a chain as data source
+    # https://python.langchain.com/en/latest/modules/chains/index_examples/chat_vector_db.html
+    # chat over documents
+    chain = RetrievalQA.from_chain_type(
+        llm=chat, retriever=db.as_retriever(), chain_type="stuff", verbose=True
+    )
+    response = chain({"query": "who discovered whispering gallery mode?"})
+
+    print(response)
 
 
-system_message_prompt_template = SystemMessagePromptTemplate.from_template(
-    """You are a helpful assistant that answers user's question. Keep the answer precise.
-{summary}
-"""
-)
-human_message_prompt_template = HumanMessagePromptTemplate.from_template(
-    """Human: {input}\nAI: """
-)
-chat_prompt_template = ChatPromptTemplate.from_messages(
-    [system_message_prompt_template, human_message_prompt_template]
-)
+def work_with_memory():
+    chat = create_chat()
+    # """
+    # Recent conversations:
+    # {chat_history_lines}
+    # """
+    conv_window_memory = ConversationBufferWindowMemory(
+        memory_key="chat_history_lines", input_key="input", k=1, return_messages=True
+    )
 
-# resp = chat(chat_prompt.format_prompt(text="I love programming?").to_messages())
-chain = ConversationChain(
-    llm=chat,
-    prompt=chat_prompt_template,
-    verbose=True,
-    memory=conv_summary_buffer,
-)
+    # """
+    # summary of conversation:
+    # {summary}
+    # """
+    summary_memory = ConversationSummaryMemory(
+        llm=chat, input_key="input", memory_key="summary"
+    )
 
-backup_memory = ConversationBufferMemory()
+    combined_memory = CombinedMemory(memories=[conv_window_memory, summary_memory])
 
-response = chain({"input": "First 3 colors of the rainbow?"})
-backup_memory.save_context(
-    {"input": response["input"]}, {"outputs": response["response"]}
-)
-print(response)
-response = chain({"input": "And next 4?"})
-print(response)
-response = chain({"input": "Pink?"})
-print(response)
+    #  combine the summary and window memory
+    conv_summary_buffer = ConversationSummaryBufferMemory(
+        llm=chat, max_token_limit=40, memory_key="summary"
+    )
+
+    # the memory is inserted using the system message prompt by memory_key
+    system_message_prompt_template = SystemMessagePromptTemplate.from_template(
+        """You are a helpful assistant that answers user's question. Keep the answer precise.
+    {summary}
+    """
+    )
+
+    human_message_prompt_template = HumanMessagePromptTemplate.from_template(
+        """Human: {input}\nAI: """
+    )
+    chat_prompt_template = ChatPromptTemplate.from_messages(
+        [system_message_prompt_template, human_message_prompt_template]
+    )
+
+    # resp = chat(chat_prompt.format_prompt(text="I love programming?").to_messages())
+    chain = ConversationChain(
+        llm=chat,
+        prompt=chat_prompt_template,
+        verbose=True,
+        memory=conv_summary_buffer,
+    )
+    # additional memory that is not used in the chain but can be used to save the context
+    backup_memory = ConversationBufferMemory()
+
+    response = chain({"input": "Who discovered whispering gallery effect?"})
+    backup_memory.save_context(
+        {"input": response["input"]}, {"outputs": response["response"]}
+    )
+    print(response)
+    response = chain({"input": "And next 4?"})
+    backup_memory.save_context(
+        {"input": response["input"]}, {"outputs": response["response"]}
+    )
+    print(response)
+    response = chain({"input": "Pink?"})
+    print(response)
+
 
 # chain = LLMChain(llm=chat, memory=memory)
 # chain.run(prompt="I love programming.")

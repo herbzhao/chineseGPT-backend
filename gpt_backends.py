@@ -10,21 +10,14 @@ from dotenv import load_dotenv
 from langchain import LLMChain, OpenAI, PromptTemplate
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts.chat import (
-    AIMessagePromptTemplate,
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
-)
+from langchain.prompts.chat import (AIMessagePromptTemplate,
+                                    ChatPromptTemplate,
+                                    HumanMessagePromptTemplate,
+                                    SystemMessagePromptTemplate)
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
-from parameters import (
-    HISTORY_MAX_LENGTH,
-    HISTORY_MAX_TEXT,
-    MODEL,
-    ACCURACY_TEMPERATURE_MAP,
-    system_prompts,
-)
+from parameters import (ACCURACY_TEMPERATURE_MAP, HISTORY_MAX_LENGTH,
+                        HISTORY_MAX_TEXT, MODEL, system_prompts)
 
 load_dotenv()
 load_dotenv(".env.local")

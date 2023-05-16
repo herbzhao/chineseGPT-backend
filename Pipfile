@@ -33,6 +33,10 @@ bcrypt = "*"
 pydantic = {extras = ["email"], version = "*"}
 langchain = {extras = ["llms"], version = "*"}
 chromadb = "*"
+pypdf = "*"
+beautifulsoup4 = "*"
+faiss-cpu = "*"
+lxml = "*"
 
 [dev-packages]
 black = "*"
