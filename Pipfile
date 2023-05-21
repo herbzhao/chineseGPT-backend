@@ -37,6 +37,9 @@ pypdf = "*"
 beautifulsoup4 = "*"
 faiss-cpu = "*"
 lxml = "*"
+duckduckgo-search = "*"
+google-api-python-client = "*"
+pinecone-client = "*"
 
 [dev-packages]
 black = "*"

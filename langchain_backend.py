@@ -49,6 +49,7 @@ from langchain.text_splitter import (
 )
 from langchain.vectorstores import FAISS, Chroma, Pinecone
 from pydantic import BaseModel, validator
+import pinecone
 
 from parameters import (
     ACCURACY_TEMPERATURE_MAP,
@@ -96,36 +97,96 @@ def create_chat(
     return chat
 
 
+def load_document_from_github_repo(folder_path: Path, filetype: str = ".py"):
+    if not folder_path.is_dir():
+        raise ValueError("folder_path must be a directory")
+    documents = []
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for file in filenames:
+            if file.endswith(filetype) and "/.venv/" not in dirpath:
+                try:
+                    loader = TextLoader(os.path.join(dirpath, file), encoding="utf-8")
+                    documents.extend(loader.load_and_split())
+                except Exception as e:
+                    pass
+    return documents
+
+
+def create_pinecone_index(texts, embeddings, index_name):
+    pinecone.init(
+        api_key=os.getenv("PINECONE_API_KEY"),  # find at app.pinecone.io
+        environment=os.getenv("PINECONE_ENV"),  # next to api key in console
+    )
+    active_indexes = pinecone.list_indexes()
+    if index_name not in active_indexes:
+        pinecone.create_index(
+            index_name,
+            dimension=1536,
+            metric="cosine",
+            pods=1,
+            replicas=1,
+            pod_type="Starter",
+        )
+    db = Pinecone.from_documents(texts, embeddings, index_name=index_name)
+
+
 def use_vector_store():
-    chat = create_chat()
-    loader = TextLoader("resources\example.txt", encoding="utf8")
+    chat = create_chat(model="gpt-4")
+    # loader = TextLoader("resources\example.txt", encoding="utf8")
     # loader = PyPDFLoader("resources\gpt4_explain.pdf")
     # loader = BSHTMLLoader("resources\gpt4_explain.html", open_encoding="utf8")
+    # documents = loader.load()
+    documents = load_document_from_github_repo(
+        Path("resources\langchain"), filetype=".py"
+    )
 
-    documents = loader.load()
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=0)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     texts = text_splitter.split_documents(documents)
     embeddings = OpenAIEmbeddings()
-    db = FAISS.from_documents(texts, embeddings)
+
+    # to create a vector store
+    # db = Chroma.from_documents(
+    #     documents=texts,
+    #     embedding=embeddings,
+    #     persist_directory="resources\chroma",
+    # )
+
+    # to load a vector store
+    db = Chroma(
+        persist_directory="resources\chroma", embedding_function=OpenAIEmbeddings()
+    )
+    db.persist()
 
     # do a similarity search on the database - returns a list of documents that are similar to a given query
-    query = "who discovered whispering gallery mode?"
-    docs = db.similarity_search(query)
-    print(docs)
+    # query = "how to stream chat using callbacks??"
+    # docs = db.similarity_search(query)
+    # print(docs)
 
     # actually use it in a chain as data source
     # https://python.langchain.com/en/latest/modules/chains/index_examples/chat_vector_db.html
     # chat over documents
-    chain = RetrievalQA.from_chain_type(
-        llm=chat, retriever=db.as_retriever(), chain_type="stuff", verbose=True
+    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+    chain = ConversationalRetrievalChain.from_llm(
+        llm=chat, retriever=db.as_retriever(), memory=memory
     )
-    response = chain({"query": "who discovered whispering gallery mode?"})
 
-    print(response)
+    response = chain(
+        {
+            "question": "how to stream chat using callbacks?",
+        }
+    )
+
+    print()
+    # print(response["answer"])
+    response = chain(
+        {
+            "question": "And how do I stop the stream prematuraly?",
+        }
+    )
 
 
-def work_with_memory():
+def use_memory():
     chat = create_chat()
     # """
     # Recent conversations:
@@ -186,6 +247,24 @@ def work_with_memory():
     print(response)
     response = chain({"input": "Pink?"})
     print(response)
+
+
+def use_agent():
+    chat = create_chat()
+    # https://www.youtube.com/watch?v=KerHlb8nuVc
+    tools = load_tools(["google-search", "python_repl"], llm=chat, max_iterations=3)
+    agent = initialize_agent(
+        tools,
+        llm=chat,
+        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        verbose=True,
+    )
+    response = agent.run("BItcoin price in rmb and usd for 2023 May 17th ?")
+    print(response)
+
+
+# use_agent()
+use_vector_store()
 
 
 # chain = LLMChain(llm=chat, memory=memory)
