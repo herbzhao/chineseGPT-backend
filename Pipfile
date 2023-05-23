@@ -40,9 +40,13 @@ lxml = "*"
 duckduckgo-search = "*"
 google-api-python-client = "*"
 pinecone-client = "*"
+sentence-transformers = "*"
+update = "*"
+typing-extensions = "==4.5.0"
 
 [dev-packages]
 black = "*"
+ipykernel = "*"
 
 [requires]
 python_version = "3.9"

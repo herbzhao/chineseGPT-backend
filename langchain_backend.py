@@ -7,57 +7,37 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import openai
+import pinecone
 import tiktoken
 from dotenv import load_dotenv
 from langchain import OpenAI, PromptTemplate
+from langchain.agents import AgentType, initialize_agent, load_tools
 from langchain.callbacks.base import AsyncCallbackHandler, BaseCallbackHandler
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chains import (
-    ConversationChain,
-    LLMChain,
-    RetrievalQA,
-    SequentialChain,
-    ConversationalRetrievalChain,
-)
+from langchain.chains import (ConversationalRetrievalChain, ConversationChain,
+                              LLMChain, RetrievalQA, SequentialChain)
 from langchain.chat_models import ChatOpenAI
 from langchain.document_loaders import BSHTMLLoader, PyPDFLoader, TextLoader
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.indexes import VectorstoreIndexCreator
-from langchain.memory import (
-    ChatMessageHistory,
-    CombinedMemory,
-    ConversationBufferMemory,
-    ConversationBufferWindowMemory,
-    ConversationSummaryBufferMemory,
-    ConversationSummaryMemory,
-    SimpleMemory,
-)
-
-from langchain.agents import load_tools, initialize_agent, AgentType
-from langchain.prompts.chat import (
-    AIMessagePromptTemplate,
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    PromptTemplate,
-    SystemMessagePromptTemplate,
-)
+from langchain.memory import (ChatMessageHistory, CombinedMemory,
+                              ConversationBufferMemory,
+                              ConversationBufferWindowMemory,
+                              ConversationSummaryBufferMemory,
+                              ConversationSummaryMemory, SimpleMemory)
+from langchain.prompts.chat import (AIMessagePromptTemplate,
+                                    ChatPromptTemplate,
+                                    HumanMessagePromptTemplate, PromptTemplate,
+                                    SystemMessagePromptTemplate)
 from langchain.schema import AIMessage, HumanMessage, LLMResult, SystemMessage
-from langchain.text_splitter import (
-    CharacterTextSplitter,
-    RecursiveCharacterTextSplitter,
-    TokenTextSplitter,
-)
+from langchain.text_splitter import (CharacterTextSplitter,
+                                     RecursiveCharacterTextSplitter,
+                                     TokenTextSplitter)
 from langchain.vectorstores import FAISS, Chroma, Pinecone
 from pydantic import BaseModel, validator
-import pinecone
 
-from parameters import (
-    ACCURACY_TEMPERATURE_MAP,
-    HISTORY_MAX_LENGTH,
-    HISTORY_MAX_TEXT,
-    MODEL,
-    system_prompts,
-)
+from parameters import (ACCURACY_TEMPERATURE_MAP, HISTORY_MAX_LENGTH,
+                        HISTORY_MAX_TEXT, MODEL, system_prompts)
 
 load_dotenv()
 load_dotenv(".env.local")
@@ -136,19 +116,8 @@ def use_vector_store():
     # loader = PyPDFLoader("resources\gpt4_explain.pdf")
     # loader = BSHTMLLoader("resources\gpt4_explain.html", open_encoding="utf8")
     # documents = loader.load()
-    documents = load_document_from_github_repo(
-        Path("resources\langchain"), filetype=".py"
-    )
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    texts = text_splitter.split_documents(documents)
-    embeddings = OpenAIEmbeddings()
-
-    # to create a vector store
-    # db = Chroma.from_documents(
-    #     documents=texts,
-    #     embedding=embeddings,
-    #     persist_directory="resources\chroma",
+    # documents = load_document_from_github_repo(
+    #     Path("resources\langchain"), filetype=".py"
     # )
 
     # to load a vector store
@@ -168,7 +137,10 @@ def use_vector_store():
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
     chain = ConversationalRetrievalChain.from_llm(
-        llm=chat, retriever=db.as_retriever(), memory=memory
+        llm=chat,
+        retriever=db.as_retriever(),
+        memory=memory,
+        return_source_documents=True,
     )
 
     response = chain(
@@ -176,6 +148,8 @@ def use_vector_store():
             "question": "how to stream chat using callbacks?",
         }
     )
+
+    print(response)
 
     print()
     # print(response["answer"])
@@ -193,7 +167,10 @@ def use_memory():
     # {chat_history_lines}
     # """
     conv_window_memory = ConversationBufferWindowMemory(
-        memory_key="chat_history_lines", input_key="input", k=1, return_messages=True
+        memory_key="chat_history_lines",
+        input_key="input",
+        k=1,
+        return_messages=True,
     )
 
     # """
